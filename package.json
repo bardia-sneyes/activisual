@@ -1,0 +1,20 @@
+{
+  "name": "activisual",
+  "version": "0.1.0",
+  "description": "A local-first live visual companion for Codex sessions",
+  "type": "module",
+  "bin": {
+    "activisual": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js start --no-open",
+    "dev": "node --watch src/cli.js start --no-open",
+    "test": "node --test",
+    "check": "node --check src/cli.js && node --check src/server.js && node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "private": true
+}

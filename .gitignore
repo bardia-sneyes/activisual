@@ -1,0 +1,5 @@
+node_modules/
+.activisual/
+coverage/
+.DS_Store
+*.log
