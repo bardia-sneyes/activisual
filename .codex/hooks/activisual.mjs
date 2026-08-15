@@ -18,12 +18,12 @@ function redactText(value, maxLength = 12_000) {
   return clean.length <= maxLength ? clean : `${clean.slice(0, maxLength)}\n… [truncated]`;
 }
 
-function redact(value, depth = 0, maxText = 12_000) {
+function redact(value, depth = 0) {
   if (depth > 7) return '[depth limit]';
-  if (typeof value === 'string') return redactText(value, maxText);
+  if (typeof value === 'string') return redactText(value);
   if (value === null || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.slice(0, 100).map((item) => redact(item, depth + 1, maxText));
-  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, sensitiveKey.test(key) ? REDACTED : redact(child, depth + 1, maxText)]));
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => redact(item, depth + 1));
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, sensitiveKey.test(key) ? REDACTED : redact(child, depth + 1)]));
 }
 
 function safeId(value) {
@@ -45,14 +45,11 @@ function compact(input) {
   if (['PreToolUse', 'PostToolUse'].includes(event)) {
     result.toolName = String(input.tool_name || 'tool');
     result.toolUseId = safeId(input.tool_use_id || result.id);
-    result.toolInput = redact(input.tool_input, 0, 2_000_000);
-    result.permission = compactPermission(input);
-    if (event === 'PostToolUse') result.toolResponse = redact(input.tool_response, 0, 2_000_000);
+    result.toolInput = redact(input.tool_input);
+    if (event === 'PostToolUse') result.toolResponse = redact(input.tool_response);
   } else if (event === 'PermissionRequest') {
     result.toolName = String(input.tool_name || 'tool');
-    result.toolUseId = input.tool_use_id ? safeId(input.tool_use_id) : null;
-    result.toolInput = redact(input.tool_input, 0, 2_000_000);
-    result.permission = compactPermission(input);
+    result.toolInput = redact(input.tool_input);
   } else if (event === 'UserPromptSubmit') {
     result.prompt = redactText(input.prompt || '', 4_000);
   } else if (event === 'SessionStart') result.source = String(input.source || 'startup');
@@ -64,24 +61,6 @@ function compact(input) {
   else if (event === 'Stop') result.stopHookActive = Boolean(input.stop_hook_active);
   else result.data = redact(input);
   return result;
-}
-
-function compactPermission(input) {
-  const source = input.permission || input.permission_request || {};
-  const pick = (...keys) => keys.map((key) => input[key] ?? source?.[key]).find((value) => value != null);
-  const mode = pick('permission_mode', 'mode');
-  const decision = pick('permission_decision', 'decision', 'outcome', 'result');
-  const reason = pick('permission_reason', 'reason', 'message');
-  const risk = pick('risk_level', 'risk');
-  const allowed = pick('allowed', 'is_allowed', 'approved');
-  if (mode == null && decision == null && reason == null && risk == null && allowed == null) return null;
-  return redact({
-    mode: mode == null ? null : String(mode),
-    decision: decision == null ? null : String(decision),
-    reason: reason == null ? null : String(reason),
-    risk: risk == null ? null : String(risk),
-    allowed: typeof allowed === 'boolean' ? allowed : null,
-  });
 }
 
 let raw = '';

@@ -33,9 +33,14 @@
     <main>
       <section class="mission-bar" aria-labelledby="mission-title">
         <div class="mission-copy">
+          <div class="mission-context" aria-label="Current session identity">
+            <span><small>PROJECT</small><strong id="mission-project">—</strong></span>
+            <span><small>SESSION</small><strong id="mission-session">—</strong></span>
+            <span><small>ID</small><strong id="mission-id">—</strong></span>
+          </div>
           <div class="eyebrow"><span id="status-icon">●</span> <span id="status-label">AWAITING SIGNAL</span></div>
           <h1 id="mission-title">No Codex session captured yet</h1>
-          <p id="mission-summary">Start Codex in this project after installing the Activisual hooks.</p>
+          <div id="mission-summary" class="mission-summary" aria-live="polite">Start Codex in this project after installing the Activisual hooks.</div>
         </div>
         <dl class="metrics" aria-label="Session metrics">
           <div><dt>EVENTS</dt><dd id="metric-events">000</dd></div>
@@ -44,44 +49,36 @@
           <div><dt>ELAPSED</dt><dd id="metric-elapsed">00:00</dd></div>
         </dl>
         <div class="mission-actions">
-          <button id="replay-toggle" class="control-button" type="button" disabled><span>▶</span> REPLAY</button>
+          <button id="export-session" class="icon-button" type="button" aria-label="Export current session trace" title="Export session trace" disabled>↓</button>
           <button id="delete-session" class="icon-button danger" type="button" aria-label="Delete current saved session" title="Delete session" disabled>×</button>
         </div>
       </section>
 
-      <section id="replay-controls" class="replay-controls" hidden aria-label="Replay controls">
-        <button id="replay-play" class="icon-button" type="button" aria-label="Play replay">▶</button>
-        <input id="replay-range" type="range" min="0" max="0" value="0" aria-label="Replay position">
-        <output id="replay-position">0 / 0</output>
-        <label>SPEED
-          <select id="replay-speed" aria-label="Replay speed">
-            <option value="1200">0.5×</option>
-            <option value="600" selected>1×</option>
-            <option value="240">2×</option>
-          </select>
-        </label>
-      </section>
-
       <section class="workspace" aria-label="Codex session visualization">
-        <article class="panel timeline-panel">
-          <header class="panel-header">
-            <div><span class="panel-index">01</span><h2>LIVE TRACE</h2></div>
-            <span id="timeline-count" class="panel-meta">0 CHUNKS</span>
-          </header>
-          <div id="timeline" class="timeline" aria-live="polite"></div>
-        </article>
-
         <article class="panel graph-panel">
           <header class="panel-header">
-            <div><span class="panel-index">02</span><h2>WORK GRAPH</h2></div>
-            <div class="legend" aria-label="Graph legend">
-              <span><i class="legend-work"></i>WORK</span>
-              <span><i class="legend-file"></i>FILE</span>
-              <span><i class="legend-decision"></i>DECISION</span>
+            <div><span class="panel-index">01</span><h2>WORKFLOW</h2><span id="graph-summary" class="panel-meta">CHRONOLOGICAL LANES</span></div>
+            <div class="graph-toolbar">
+              <div class="layout-switch" role="group" aria-label="Graph layout">
+                <button id="layout-orbit" class="layout-option active" type="button" aria-pressed="true" title="Omni-directional constellation layout">CONSTELLATION</button>
+                <button id="layout-flow" class="layout-option" type="button" aria-pressed="false" title="Chronological lane layout">LANES</button>
+              </div>
+              <div class="legend" aria-label="Graph legend">
+                <span><i class="legend-work"></i>STEP</span>
+                <span><i class="legend-file"></i>FILES</span>
+                <span><i class="legend-decision"></i>USER PROMPT</span>
+              </div>
+              <div class="graph-controls" aria-label="Graph navigation">
+                <button id="graph-zoom-out" class="graph-control" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+                <button id="graph-zoom-in" class="graph-control" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+                <button id="graph-fit" class="graph-control text-control" type="button" title="Fit workflow in view">FIT</button>
+                <button id="graph-reset" class="graph-control text-control" type="button" title="Reset graph position">RESET</button>
+              </div>
             </div>
           </header>
           <div id="graph-wrap" class="graph-wrap">
-            <canvas id="work-graph" aria-label="Interactive graph of work chunks and affected files"></canvas>
+            <canvas id="work-graph" tabindex="0" aria-label="Chronological graph of commands arranged in user prompt, inspect, change, verify, and result lanes" aria-describedby="graph-instructions"></canvas>
+            <p id="graph-instructions" class="sr-only">Live mode follows new work automatically. Scrolling, dragging, zooming, or keyboard navigation enters Review mode. Press Enter to inspect a selected node.</p>
             <div id="graph-tooltip" class="graph-tooltip" hidden></div>
             <div id="graph-empty" class="graph-empty">
               <div class="radar" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -90,14 +87,20 @@
             </div>
           </div>
           <footer class="graph-footer">
-            <span>RELATION MAP // LOCAL ONLY</span>
+            <span id="graph-hint">OMNI-DIRECTIONAL CHRONOLOGY // DRAG TO PAN</span>
+            <div class="graph-mode-dock">
+              <div id="view-mode" class="view-mode" role="group" aria-label="Workflow view mode">
+                <button id="mode-live" class="mode-option active" type="button" aria-pressed="true"><span class="mode-dot" aria-hidden="true"></span>LIVE</button>
+                <button id="mode-review" class="mode-option" type="button" aria-pressed="false">REVIEW</button>
+              </div>
+            </div>
             <span id="graph-meta">0 NODES · 0 LINKS</span>
           </footer>
         </article>
       </section>
     </main>
 
-    <aside id="inspector" class="inspector" aria-labelledby="inspector-title" aria-hidden="true">
+    <aside id="inspector" class="inspector" role="dialog" aria-modal="true" aria-labelledby="inspector-title" aria-hidden="true">
       <header>
         <div><span class="panel-index">NODE</span><h2 id="inspector-title">DETAILS</h2></div>
         <button id="inspector-close" class="icon-button" type="button" aria-label="Close details">×</button>
@@ -105,14 +108,6 @@
       <div id="inspector-body"></div>
     </aside>
     <div id="scrim" class="scrim" hidden></div>
-
-    <template id="empty-template">
-      <div class="empty-trace">
-        <span class="terminal-caret">_</span>
-        <h3>WAITING FOR THE FIRST EVENT</h3>
-        <p>Run <code>activisual install</code>, trust the project hooks with <code>/hooks</code>, then start a Codex task.</p>
-      </div>
-    </template>
 
     <script type="module" src="/app.js"></script>
   </body>

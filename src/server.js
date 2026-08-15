@@ -52,6 +52,19 @@ export async function createActivisualServer(options = {}) {
         });
         return;
       }
+      const exportMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/export$/);
+      if (exportMatch && request.method === 'GET') {
+        const session = store.getSession(decodeURIComponent(exportMatch[1]));
+        if (!session) return json(response, 404, { error: 'Session not found' });
+        const fileName = `activisual-${safeFileName(session.id)}.json`;
+        response.writeHead(200, {
+          'Content-Type': MIME['.json'],
+          'Content-Disposition': `attachment; filename="${fileName}"`,
+          'Cache-Control': 'no-store',
+        });
+        response.end(`${JSON.stringify({ exportedAt: new Date().toISOString(), session }, null, 2)}\n`);
+        return;
+      }
       const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
       if (sessionMatch && request.method === 'GET') {
         const session = store.getSession(decodeURIComponent(sessionMatch[1]));
@@ -134,7 +147,7 @@ async function readJson(request) {
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 1_000_000) {
+    if (size > 4_000_000) {
       const error = new Error('Request body too large');
       error.statusCode = 413;
       throw error;
@@ -153,4 +166,8 @@ async function readJson(request) {
 function broadcast(clients, event, data) {
   const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const client of clients) client.write(message);
+}
+
+function safeFileName(value) {
+  return String(value || 'session').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'session';
 }
