@@ -13,7 +13,7 @@ test('pairs tool lifecycle events into meaningful work chunks', () => {
     { ...common, id: 'post-test', event: 'PostToolUse', turnId: 'turn-1', toolUseId: 'call-1', toolName: 'Bash', toolInput: { command: 'npm test' }, toolResponse: { exit_code: 0 }, receivedAt: at(4) },
     { ...common, id: 'pre-write', event: 'PreToolUse', turnId: 'turn-1', toolUseId: 'call-2', toolName: 'apply_patch', toolInput: { command: '*** Update File: src/app.js' }, receivedAt: at(5) },
     { ...common, id: 'post-write', event: 'PostToolUse', turnId: 'turn-1', toolUseId: 'call-2', toolName: 'apply_patch', toolInput: { command: '*** Update File: src/app.js' }, toolResponse: 'Done!', receivedAt: at(6) },
-    { ...common, id: 'stop', event: 'Stop', turnId: 'turn-1', receivedAt: at(7) },
+    { ...common, id: 'stop', event: 'Stop', turnId: 'turn-1', assistantResponse: 'Implemented the product brief and verified the tests.', receivedAt: at(7) },
   ], '/work/app');
 
   const testChunk = session.chunks.find((chunk) => chunk.id === 'call-1');
@@ -25,6 +25,18 @@ test('pairs tool lifecycle events into meaningful work chunks', () => {
   assert.deepEqual(writeChunk.files, [{ path: 'src/app.js', action: 'write' }]);
   assert.equal(session.stats.completed, 5);
   assert.equal(session.status, 'idle');
+  assert.equal(session.chunks.at(-1).details.response, 'Implemented the product brief and verified the tests.');
+});
+
+test('marks a session active when a new turn starts', () => {
+  const common = { sessionId: 'session-active', cwd: '/work/app', turnId: 'turn-active' };
+  const session = buildSession([
+    { ...common, id: 'prompt', event: 'UserPromptSubmit', prompt: 'Continue working', receivedAt: at(1) },
+    { ...common, id: 'pre', event: 'PreToolUse', toolUseId: 'call-active', toolName: 'Bash', toolInput: { command: 'npm test' }, receivedAt: at(2) },
+  ], '/work/app');
+
+  assert.equal(session.status, 'active');
+  assert.equal(session.stats.running, 1);
 });
 
 test('closes an unfinished tool when its turn completes', () => {

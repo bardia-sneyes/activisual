@@ -31,3 +31,14 @@ test('compacts hook payloads without persisting transcript paths', () => {
   assert.equal(event.toolResponse.authorization, REDACTED);
   assert.equal('transcript_path' in event, false);
 });
+
+test('captures the final assistant response on Stop', () => {
+  const event = compactHookEvent({
+    session_id: 'session-1',
+    turn_id: 'turn-1',
+    hook_event_name: 'Stop',
+    last_assistant_message: 'Finished the requested work.',
+  }, '2026-08-11T10:00:00.000Z');
+
+  assert.equal(event.assistantResponse, 'Finished the requested work.');
+});

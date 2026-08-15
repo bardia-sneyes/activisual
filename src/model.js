@@ -38,8 +38,12 @@ export function buildSession(events, projectRoot = process.cwd()) {
         tools.delete(toolUseId);
       }
       status = 'idle';
-      chunks.push(chunkFromLifecycle(event, 'Turn complete', 'Agent returned control', 'milestone'));
+      const response = String(event.assistantResponse || '').trim();
+      const completion = chunkFromLifecycle(event, 'Turn complete', response ? summarize(response, 240) : 'Agent returned control', 'milestone');
+      completion.details = response ? { response } : {};
+      chunks.push(completion);
     } else if (event.event === 'UserPromptSubmit') {
+      status = 'active';
       chunks.push({
         id: event.id,
         type: 'decision',
@@ -55,6 +59,7 @@ export function buildSession(events, projectRoot = process.cwd()) {
         details: { prompt: event.prompt },
       });
     } else if (event.event === 'PermissionRequest') {
+      status = 'active';
       const permission = normalizePermission(event.permission, event.permissionMode, 'request');
       const permissionChunk = {
         id: event.id,
@@ -75,6 +80,7 @@ export function buildSession(events, projectRoot = process.cwd()) {
       chunks.push(permissionChunk);
       pendingPermissions.push({ event, chunk: permissionChunk });
     } else if (event.event === 'PreToolUse') {
+      status = 'active';
       const chunk = toolStart(event, projectRoot);
       attachPendingPermission(chunk, event, pendingPermissions);
       tools.set(event.toolUseId, chunk);

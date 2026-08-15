@@ -93,7 +93,11 @@ export function compactHookEvent(input, receivedAt = new Date().toISOString()) {
     case 'PostCompact':
       return { ...base, trigger: String(input.trigger || input.source || 'auto') };
     case 'Stop':
-      return { ...base, stopHookActive: Boolean(input.stop_hook_active) };
+      return {
+        ...base,
+        stopHookActive: Boolean(input.stop_hook_active),
+        assistantResponse: redactText(String(input.last_assistant_message || input.assistant_response || ''), 16_000),
+      };
     default:
       return { ...base, data: redactValue(input, { maxText: 2_000 }) };
   }

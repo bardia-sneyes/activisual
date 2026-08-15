@@ -9,6 +9,9 @@ const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').mat
 const GRAPH_FONT = '"Cascadia Code", "SFMono-Regular", "Roboto Mono", Consolas, monospace';
 const PROMPT_CARD_MIN_HEIGHT = 104;
 const PROMPT_CARD_MAX_HEIGHT = 142;
+const CARD_ENTER_MS = 560;
+const CARD_EXIT_MS = 440;
+const GRAPH_ANIMATION_FRAME_MS = 1000 / 30;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -30,6 +33,7 @@ const state = {
   graphModel: null, graphHits: [], graphSignature: '',
   graphView: { scale: 1, scaleY: 1, offsetX: 0, offsetY: 0, pointer: null, animation: null },
   viewMode: 'live', layoutMode: localStorage.getItem('activisual:layout') === 'flow' ? 'flow' : 'orbit', livePhase: 0, liveFrame: null,
+  nodeMotion: new Map(), exitingNodes: [], motionContext: '', activeRangeEdge: null,
   inspectorReturnFocus: null,
 };
 
@@ -192,7 +196,9 @@ function render() {
   updateModeControl();
   updateLayoutControl();
   renderMission(session, chunks);
-  state.graphModel = buildGraphModel(chunks, session);
+  const nextGraphModel = buildGraphModel(chunks, session);
+  syncGraphNodeMotion(state.graphModel, nextGraphModel, `${state.layoutMode}:${state.selectedId || ''}`);
+  state.graphModel = nextGraphModel;
   const signature = `${state.layoutMode}:${state.selectedId || ''}:${chunks.map((chunk) => `${chunk.id}:${chunk.status}:${chunk.files?.length || 0}`).join('|')}`;
   const shouldFit = signature !== state.graphSignature;
   const hadGraph = Boolean(state.graphSignature);
@@ -357,8 +363,9 @@ function promptAttachmentsFor(prompt) {
 
 function buildGraphModel(chunks, session) {
   const turns = commandTurns(chunks);
-  if (!turns.length) return { nodes: [], links: [], groupedCount: 0, sourceCount: 0, stepCount: 0, commandCount: 0, fileCount: 0, bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
+  if (!turns.length) return { nodes: [], links: [], activeRange: null, groupedCount: 0, sourceCount: 0, stepCount: 0, commandCount: 0, fileCount: 0, bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
   const work = [];
+  let activeRange = null;
   let groupedCount = 0;
   let sourceCount = 0;
   turns.forEach((turn, index) => {
@@ -373,7 +380,10 @@ function buildGraphModel(chunks, session) {
     };
     const grouped = groupChunks(turn.chunks);
     const result = turnResultNode(turn, session, index === turns.length - 1);
-    work.push(prompt, ...grouped, result);
+    const turnWork = [prompt, ...grouped];
+    work.push(...turnWork);
+    if (result.inProgress) activeRange = { promptId: prompt.id, nodeIds: turnWork.map((item) => item.id), turnId: turn.id };
+    else work.push(result);
     groupedCount += 1 + grouped.length;
     sourceCount += 1 + turn.chunks.length;
   });
@@ -429,40 +439,115 @@ function buildGraphModel(chunks, session) {
     }
   });
 
-  if (state.layoutMode === 'orbit') layoutConstellation(nodes);
+  if (state.layoutMode === 'orbit') layoutConstellation(nodes, links);
   const bounds = graphBounds(nodes, state.layoutMode === 'orbit' ? 120 : 38);
   return {
-    nodes, links, groupedCount, sourceCount, stepCount: work.length, commandCount: turns.length,
+    nodes, links, activeRange, groupedCount, sourceCount, stepCount: work.length, commandCount: turns.length,
     fileCount: filesFor(chunks).length,
     bounds,
   };
 }
 
-function layoutConstellation(nodes) {
+function layoutConstellation(nodes, links) {
   const chunks = nodes.filter((node) => node.kind === 'chunk');
   const filesByParent = new Map(nodes.filter((node) => node.kind === 'files').map((node) => [node.id.slice(6), node]));
+  const chunksById = new Map(chunks.map((node) => [node.id, node]));
+  const incomingById = new Map(links.filter((link) => link.kind !== 'attachment').map((link) => [link.to, link.from]));
+  const placed = [];
+  const placedEdges = [];
+
   chunks.forEach((node, index) => {
-    const point = squareSpiral(index);
-    node.x = point.x * 278;
-    node.y = point.y * 218;
-    const files = filesByParent.get(node.id);
-    if (!files) return;
-    const direction = point.x || point.y ? Math.atan2(point.y, point.x) : Math.PI / 2;
-    files.x = node.x + Math.cos(direction + Math.PI / 2) * 42;
-    files.y = node.y + Math.sin(direction + Math.PI / 2) * 84;
+    if (!index) {
+      node.x = 0;
+      node.y = 0;
+      placed.push(node);
+      return;
+    }
+    const linkedParent = chunksById.get(incomingById.get(node.id));
+    const parent = placed.includes(linkedParent) ? linkedParent : placed.at(-1);
+    const preferredAngle = constellationRandom(node.id, 11) * Math.PI * 2 + index * 2.399963229728653;
+    const preferredDistance = 238 + constellationRandom(node.id, 29) * 138;
+    let best = null;
+    for (let ring = 0; ring < 4; ring += 1) {
+      const distance = preferredDistance * (.82 + ring * .17);
+      for (let option = 0; option < 20; option += 1) {
+        const angle = preferredAngle + option * 2.399963229728653 + ring * .19;
+        const candidate = {
+          ...node,
+          x: parent.x + Math.cos(angle) * distance,
+          y: parent.y + Math.sin(angle) * distance,
+        };
+        const score = constellationPlacementScore(candidate, parent, placed, placedEdges, preferredDistance)
+          + option * 1.4 + ring * 4;
+        if (!best || score < best.score) best = { candidate, score };
+      }
+    }
+    node.x = best.candidate.x;
+    node.y = best.candidate.y;
+    placedEdges.push({ from: parent, to: node });
+    placed.push(node);
   });
+
+  for (const parent of chunks) {
+    const files = filesByParent.get(parent.id);
+    if (!files) continue;
+    const preferredAngle = constellationRandom(files.id, 47) * Math.PI * 2 + .37;
+    const distance = Math.max((parent.w + files.w) / 2 + 32, (parent.h + files.h) / 2 + 42);
+    let best = null;
+    for (let option = 0; option < 18; option += 1) {
+      const angle = preferredAngle + option * 2.399963229728653;
+      const candidate = {
+        ...files,
+        x: parent.x + Math.cos(angle) * distance,
+        y: parent.y + Math.sin(angle) * distance,
+      };
+      const score = constellationPlacementScore(candidate, parent, placed, placedEdges, distance, 20) + option;
+      if (!best || score < best.score) best = { candidate, score };
+    }
+    files.x = best.candidate.x;
+    files.y = best.candidate.y;
+    placedEdges.push({ from: parent, to: files });
+    placed.push(files);
+  }
 }
 
-function squareSpiral(index) {
-  if (index === 0) return { x: 0, y: 0 };
-  const ring = Math.ceil((Math.sqrt(index + 1) - 1) / 2);
-  const side = ring * 2;
-  const max = (ring * 2 + 1) ** 2 - 1;
-  const offset = max - index;
-  if (offset < side) return { x: ring - offset, y: -ring };
-  if (offset < side * 2) return { x: -ring, y: -ring + (offset - side) };
-  if (offset < side * 3) return { x: -ring + (offset - side * 2), y: ring };
-  return { x: ring, y: ring - (offset - side * 3) };
+function constellationPlacementScore(candidate, parent, placed, edges, preferredDistance, padding = 42) {
+  let score = Math.abs(Math.hypot(candidate.x - parent.x, candidate.y - parent.y) - preferredDistance) * 3;
+  score += Math.hypot(candidate.x * .72, candidate.y * 1.45) * 1.6;
+  for (const other of placed) {
+    const overlapX = (candidate.w + other.w) / 2 + padding - Math.abs(candidate.x - other.x);
+    const overlapY = (candidate.h + other.h) / 2 + padding - Math.abs(candidate.y - other.y);
+    if (overlapX > 0 && overlapY > 0) score += 1_000_000 + overlapX * overlapY * 180;
+    else {
+      const clearance = Math.hypot(candidate.x - other.x, candidate.y - other.y);
+      score += Math.max(0, 210 - clearance) * 8;
+    }
+    if (other !== parent && segmentIntersectsRect(parent, candidate, other, 24)) score += 260_000;
+  }
+  for (const edge of edges) {
+    if (segmentIntersectsRect(edge.from, edge.to, candidate, 24)) score += 220_000;
+    if (edge.from === parent || edge.to === parent) continue;
+    if (segmentsCross(parent, candidate, edge.from, edge.to)) score += 90_000;
+  }
+  return score;
+}
+
+function segmentsCross(a, b, c, d) {
+  const orientation = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const abC = orientation(a, b, c);
+  const abD = orientation(a, b, d);
+  const cdA = orientation(c, d, a);
+  const cdB = orientation(c, d, b);
+  return (abC > 0) !== (abD > 0) && (cdA > 0) !== (cdB > 0);
+}
+
+function constellationRandom(value, salt = 0) {
+  let hash = (2166136261 ^ salt) >>> 0;
+  for (const character of String(value)) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
 }
 
 function graphBounds(nodes, padding = 60) {
@@ -491,6 +576,7 @@ function commandTurns(chunks) {
     if (chunk.type === 'milestone' && chunk.title === 'Turn complete') {
       turn.complete = true;
       turn.endedAt = chunk.endedAt || chunk.startedAt;
+      turn.agentResponse = chunk.details?.response || '';
       continue;
     }
     if (chunk.type === 'session') continue;
@@ -575,20 +661,27 @@ function combinedStatus(first, second) {
 
 function turnResultNode(turn, session, isLastTurn) {
   const failures = turn.chunks.filter((chunk) => chunk.status === 'error').length;
-  const running = turn.chunks.some((chunk) => chunk.status === 'running' || chunk.status === 'waiting');
-  const active = running || isLastTurn && !turn.complete && (session?.status === 'active' || session?.lastTurnId === turn.id);
+  const sessionActive = session?.status === 'active';
+  const running = sessionActive && turn.chunks.some((chunk) => chunk.status === 'running' || chunk.status === 'waiting');
+  const active = sessionActive && (running || isLastTurn && !turn.complete);
   const files = filesFor(turn.chunks).length;
   const completed = turn.chunks.filter((chunk) => chunk.status === 'complete').length;
-  const title = active ? 'Work in progress' : failures ? 'Completed with issues' : 'Command complete';
-  const status = failures ? 'error' : active ? 'running' : 'complete';
+  const response = String(turn.agentResponse || '').trim();
+  const title = active ? 'Work in progress' : response ? summarizeGraphText(response, 76) : failures ? 'Completed with issues' : 'Command complete';
+  const status = active ? 'running' : failures ? 'error' : 'complete';
   return {
-    id: `result:${turn.id}`, type: 'result', status, title,
-    summary: `${completed} completed · ${failures} failed · ${files} project files`,
+    id: `result:${turn.id}`, type: 'result', status, title, inProgress: active,
+    summary: response || `${completed} completed · ${failures} failed · ${files} project files`,
     startedAt: turn.endedAt || turn.chunks.at(-1)?.endedAt || turn.chunks.at(-1)?.startedAt || turn.prompt.startedAt,
     endedAt: turn.endedAt || turn.chunks.at(-1)?.endedAt || null, durationMs: null, turnId: turn.id,
     toolName: null, files: [], sourceIds: [], sourceCount: 1,
-    details: { prompt: turn.prompt.summary, completed, failures, files, turnStatus: active ? 'active' : 'complete' },
+    details: { prompt: turn.prompt.summary, response: response || null, completed, failures, files, turnStatus: active ? 'active' : 'complete' },
   };
+}
+
+function summarizeGraphText(value, maxLength) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 function laneFor(node) {
@@ -709,8 +802,64 @@ function cancelCameraAnimation() {
   state.graphView.animation = null;
 }
 
+function syncGraphNodeMotion(previousModel, nextModel, context) {
+  if (REDUCED_MOTION) {
+    state.nodeMotion.clear();
+    state.exitingNodes = [];
+    state.motionContext = context;
+    return;
+  }
+  const now = performance.now();
+  const reset = state.motionContext !== context;
+  if (reset) {
+    state.nodeMotion.clear();
+    state.exitingNodes = [];
+    state.motionContext = context;
+  }
+  const nextIds = new Set(nextModel.nodes.map((node) => node.id));
+  nextModel.nodes.forEach((node, index) => {
+    if (!state.nodeMotion.has(node.id)) {
+      state.nodeMotion.set(node.id, { enteredAt: now + Math.min(index * 18, 280) });
+    }
+  });
+  if (!reset && previousModel) {
+    for (const node of previousModel.nodes) {
+      if (!nextIds.has(node.id)) state.exitingNodes.push({ node, removedAt: now });
+    }
+  }
+  for (const id of state.nodeMotion.keys()) {
+    if (!nextIds.has(id)) state.nodeMotion.delete(id);
+  }
+  state.exitingNodes = state.exitingNodes.filter((item) => now - item.removedAt < CARD_EXIT_MS);
+}
+
+function nodeEnterProgress(id, now = performance.now()) {
+  if (REDUCED_MOTION) return 1;
+  const motion = state.nodeMotion.get(id);
+  if (!motion) return 1;
+  return clamp((now - motion.enteredAt) / CARD_ENTER_MS, 0, 1);
+}
+
+function hasPendingCardMotion(now = performance.now()) {
+  if (state.exitingNodes.some((item) => now - item.removedAt < CARD_EXIT_MS && isGraphNodeVisible(item.node, 80))) return true;
+  return Boolean(state.graphModel?.nodes.some((node) => {
+    const motion = state.nodeMotion.get(node.id);
+    return motion && now < motion.enteredAt + CARD_ENTER_MS && isGraphNodeVisible(node, 80);
+  }));
+}
+
+function hasVisibleInProgressCards() {
+  if (state.graphModel?.nodes.some((node) => node.kind === 'chunk' && isInProgressNode(node.data) && isGraphNodeVisible(node, 100))) return true;
+  const range = state.graphModel?.activeRange;
+  return Boolean(range && state.graphModel.nodes.some((node) => range.nodeIds.includes(node.id) && isGraphNodeVisible(node, 100)));
+}
+
+function isInProgressNode(data) {
+  return data?.status === 'running' || data?.status === 'waiting';
+}
+
 function syncLiveAnimation() {
-  const shouldAnimate = !REDUCED_MOTION && state.viewMode === 'live' && state.session?.status === 'active';
+  const shouldAnimate = !REDUCED_MOTION && (hasPendingCardMotion() || hasVisibleInProgressCards());
   if (!shouldAnimate && state.liveFrame) {
     cancelAnimationFrame(state.liveFrame);
     state.liveFrame = null;
@@ -719,10 +868,14 @@ function syncLiveAnimation() {
   if (!shouldAnimate || state.liveFrame) return;
   let previous = performance.now();
   const tick = (now) => {
+    if (now - previous < GRAPH_ANIMATION_FRAME_MS) {
+      state.liveFrame = requestAnimationFrame(tick);
+      return;
+    }
     state.livePhase = (state.livePhase + (now - previous) * .045) % 1000;
     previous = now;
     drawGraph();
-    if (state.viewMode === 'live' && state.session?.status === 'active') state.liveFrame = requestAnimationFrame(tick);
+    if (hasPendingCardMotion(now) || hasVisibleInProgressCards()) state.liveFrame = requestAnimationFrame(tick);
     else state.liveFrame = null;
   };
   state.liveFrame = requestAnimationFrame(tick);
@@ -848,9 +1001,20 @@ function drawGraph() {
   drawGrid(ctx, width, height);
   if (state.layoutMode === 'flow') drawLaneBands(ctx, width);
   else drawConstellationField(ctx, width, height);
+  const now = performance.now();
   const screenNodes = model.nodes.map(projectNode);
   const byId = new Map(screenNodes.map((node) => [node.id, node]));
-  const linkRoutes = allocateLinkRoutes(model.links, byId, screenNodes);
+  const visibleNodes = screenNodes.filter((node) => isScreenNodeVisible(node, width, height, 110));
+  const visibleIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleLinkKeys = new Set();
+  const visibleLinks = model.links.filter((link) => {
+    if (!visibleIds.has(link.from) || !visibleIds.has(link.to)) return false;
+    const key = `${link.from}:${link.to}:${link.kind}`;
+    if (visibleLinkKeys.has(key)) return false;
+    visibleLinkKeys.add(key);
+    return true;
+  });
+  const linkRoutes = allocateLinkRoutes(visibleLinks, byId, visibleNodes);
   const related = relatedNodeIds(model);
   const focusId = state.hoveredNodeId || state.selectedNodeId;
   const latestSequence = [...model.links].reverse().find((link) => link.kind === 'sequence');
@@ -860,25 +1024,35 @@ function drawGraph() {
   ctx.beginPath();
   ctx.rect(laneGutter(), 0, Math.max(0, width - laneGutter()), height);
   ctx.clip();
-  for (const link of model.links) {
+  drawActiveWorkRange(ctx, model.activeRange, byId, width, height);
+  for (const link of visibleLinks) {
     const from = byId.get(link.from);
     const to = byId.get(link.to);
     if (!from || !to) continue;
     const emphasized = !focusId || related.has(link.from) && related.has(link.to);
-    drawLink(ctx, from, to, link.kind, emphasized ? 1 : .12, link === latestSequence && Boolean(liveHeadId), linkRoutes.get(link));
+    const motionOpacity = Math.min(nodeEnterProgress(link.from, now), nodeEnterProgress(link.to, now));
+    drawLink(
+      ctx, from, to, link.kind, (emphasized ? 1 : .12) * motionOpacity,
+      link === latestSequence && Boolean(liveHeadId), linkRoutes.get(link), itemDurationLabel(to.data),
+    );
   }
-  for (const node of screenNodes) {
-    const opacity = !focusId || related.has(node.id) ? 1 : .16;
-    if (node.kind === 'files') drawFileNode(ctx, node, opacity);
-    else drawWorkNode(ctx, node, opacity, node.id === liveHeadId);
+  drawExitingCards(ctx, now);
+  for (const node of visibleNodes) {
+    const progress = nodeEnterProgress(node.id, now);
+    const animatedNode = animateCardEntrance(node, progress);
+    const opacity = (!focusId || related.has(node.id) ? 1 : .16) * smoothstep(progress);
+    if (progress < 1) drawMaterializationHalo(ctx, animatedNode, progress);
+    if (node.kind === 'files') drawFileNode(ctx, animatedNode, opacity);
+    else drawWorkNode(ctx, animatedNode, opacity, node.id === liveHeadId);
   }
   ctx.restore();
   if (state.layoutMode === 'flow') drawLaneHeaders(ctx, height);
 
-  state.graphHits = screenNodes.filter((node) => node.x + node.w / 2 >= laneGutter()).map((node) => ({ ...node, node: node.data }));
+  state.graphHits = visibleNodes.filter((node) => node.x + node.w / 2 >= laneGutter()).map((node) => ({ ...node, node: node.data }));
   const collapsed = Math.max(0, model.sourceCount - model.groupedCount);
   elements.graphSummary.textContent = collapsed ? `${collapsed} REPEATED STEP${collapsed === 1 ? '' : 'S'} COLLAPSED` : state.layoutMode === 'orbit' ? 'CONSTELLATION MAP' : 'CHRONOLOGICAL LANES';
   elements.graphMeta.textContent = `${model.commandCount} COMMAND${model.commandCount === 1 ? '' : 'S'} · ${model.stepCount} STEPS · ${model.fileCount} FILES`;
+  if (!state.liveFrame && !REDUCED_MOTION && (hasPendingCardMotion(now) || hasVisibleInProgressCards())) syncLiveAnimation();
 }
 
 function projectNode(node) {
@@ -1048,7 +1222,7 @@ function drawConstellationField(ctx, width, height) {
   ctx.restore();
 }
 
-function drawLink(ctx, from, to, kind, opacity, active = false, route = null) {
+function drawLink(ctx, from, to, kind, opacity, active = false, route = null, durationLabel = '') {
   const linkScale = Math.max(.01, (from.visualScale + to.visualScale) / 2);
   const strokeScale = graphStrokeScale(linkScale);
   ctx.save();
@@ -1082,7 +1256,30 @@ function drawLink(ctx, from, to, kind, opacity, active = false, route = null) {
   ctx.stroke();
   if (kind === 'sequence' || kind === 'handoff') {
     drawArrowHead(ctx, end.x, end.y, kind === 'handoff' ? '#ffd166' : 'rgba(113,247,168,.72)', ports.to, strokeScale);
+    if (durationLabel && to.visualScale >= .48) drawLinkDuration(ctx, end, endNormal, durationLabel, kind, strokeScale);
   }
+  ctx.restore();
+}
+
+function drawLinkDuration(ctx, end, endNormal, label, kind, scale) {
+  const fontSize = clamp(7.5 * scale, 7.5, 10.5);
+  const perpendicular = { x: -endNormal.y, y: endNormal.x };
+  const x = end.x + endNormal.x * 22 * scale + perpendicular.x * 9 * scale;
+  const y = end.y + endNormal.y * 22 * scale + perpendicular.y * 9 * scale;
+  ctx.save();
+  ctx.font = `700 ${fontSize}px ${GRAPH_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const width = ctx.measureText(label).width + 10 * scale;
+  const height = fontSize + 6 * scale;
+  ctx.fillStyle = 'rgba(5,12,10,.94)';
+  ctx.strokeStyle = kind === 'handoff' ? 'rgba(255,209,102,.46)' : 'rgba(113,247,168,.38)';
+  ctx.lineWidth = Math.max(1, scale);
+  roundedRect(ctx, x - width / 2, y - height / 2, width, height, height / 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = kind === 'handoff' ? '#ffd166' : '#9bcbb5';
+  ctx.fillText(label, x, y + .3);
   ctx.restore();
 }
 
@@ -1240,6 +1437,7 @@ function drawWorkNode(ctx, node, opacity, liveHead = false) {
   const w = node.w / visualScale;
   const h = node.h / visualScale;
   const color = nodeColor(data);
+  const inProgress = isInProgressNode(data);
   const selected = state.selectedNodeId === data.id || state.hoveredNodeId === data.id;
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -1248,7 +1446,7 @@ function drawWorkNode(ctx, node, opacity, liveHead = false) {
   ctx.fillStyle = data.type === 'result' ? 'rgba(12,28,21,.98)' : 'rgba(8,17,14,.96)';
   ctx.strokeStyle = color;
   ctx.lineWidth = (selected ? 2 : 1) * graphStrokeScale(visualScale) / visualScale;
-  if (liveHead) {
+  if (liveHead || inProgress) {
     const pulse = .32 + (Math.sin(state.livePhase * .045) + 1) * .14;
     ctx.shadowColor = color;
     ctx.shadowBlur = 12 + pulse * 14;
@@ -1256,6 +1454,7 @@ function drawWorkNode(ctx, node, opacity, liveHead = false) {
   roundedRect(ctx, -w / 2, -h / 2, w, h, 4); ctx.fill(); ctx.stroke();
   ctx.shadowBlur = 0;
   ctx.fillStyle = color; ctx.fillRect(-w / 2, -h / 2, 3 * graphStrokeScale(visualScale) / visualScale, h);
+  if (inProgress) drawInProgressMagic(ctx, w, h, color, visualScale);
   const detailFontSize = (data.type === 'prompt' ? 10 : 11) * visualScale;
   if (node.h < 36 || node.w < 72) {
     drawCompactNodeTitle(ctx, node, data.type.toUpperCase(), color);
@@ -1281,7 +1480,7 @@ function drawWorkNode(ctx, node, opacity, liveHead = false) {
   ctx.fillText(fitNodeTitle(data, Math.max(11, Math.floor((w - 24) / 6.7))), -w / 2 + 12, 5);
   ctx.fillStyle = '#789087';
   ctx.font = `8px ${GRAPH_FONT}`;
-  ctx.fillText(timeOnly(data.startedAt), -w / 2 + 12, h / 2 - 9);
+  ctx.fillText(cardTimingText(data), -w / 2 + 12, h / 2 - 9);
   if (data.permission && w >= 116) {
     const gate = data.permission.allowed === false ? 'DENY' : data.permission.allowed === true ? 'ALLOW' : 'GATE';
     ctx.fillStyle = data.permission.allowed === false ? '#ff646d' : data.permission.allowed === true ? '#71f7a8' : '#ffd166';
@@ -1329,7 +1528,7 @@ function drawPromptNodeContent(ctx, data, w, h, color) {
 
   ctx.fillStyle = '#789087';
   ctx.font = `8px ${GRAPH_FONT}`;
-  ctx.fillText(timeOnly(data.startedAt), left, h / 2 - 9);
+  ctx.fillText(cardTimingText(data), left, h / 2 - 9);
 }
 
 function drawCondensedPromptNode(ctx, node, data, color) {
@@ -1490,6 +1689,43 @@ function drawFileNode(ctx, node, opacity) {
     ctx.fillText(additions, -w / 2 + 21, footerTop + diffHeight / 2);
     ctx.fillStyle = '#ff646d';
     ctx.fillText(deletions, -w / 2 + 27 + ctx.measureText(additions).width, footerTop + diffHeight / 2);
+  }
+  ctx.restore();
+}
+
+function drawInProgressMagic(ctx, w, h, color, visualScale) {
+  const phase = state.livePhase;
+  const pulse = .5 + Math.sin(phase * .055) * .5;
+  const sweep = -w / 2 - 44 + (phase * 1.7 % (w + 88));
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha *= .12 + pulse * .08;
+  roundedRect(ctx, -w / 2, -h / 2, w, h, 4);
+  ctx.clip();
+  const gradient = ctx.createLinearGradient(sweep - 34, 0, sweep + 34, 0);
+  gradient.addColorStop(0, 'rgba(255,255,255,0)');
+  gradient.addColorStop(.5, color);
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(sweep - 34, -h / 2, 68, h);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha *= .24 + pulse * .2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = (1.1 + pulse * .7) * graphStrokeScale(visualScale) / visualScale;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8 + pulse * 10;
+  roundedRect(ctx, -w / 2 - 2 / visualScale, -h / 2 - 2 / visualScale, w + 4 / visualScale, h + 4 / visualScale, 5);
+  ctx.stroke();
+  for (let index = 0; index < 3; index += 1) {
+    const angle = phase * .028 + index * Math.PI * 2 / 3;
+    const moteX = Math.cos(angle) * (w / 2 + 5 / visualScale);
+    const moteY = Math.sin(angle) * (h / 2 + 5 / visualScale);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(moteX, moteY, (1.2 + pulse) / visualScale, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -1733,6 +1969,181 @@ function parseEmbeddedDataUrl(value, label = 'attachment') {
   };
 }
 
+function isGraphNodeVisible(node, margin = 0) {
+  const rect = elements.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return false;
+  return isScreenNodeVisible(projectNode(node), rect.width, rect.height, margin);
+}
+
+function isScreenNodeVisible(node, width, height, margin = 0) {
+  return node.x + node.w / 2 >= laneGutter() - margin
+    && node.x - node.w / 2 <= width + margin
+    && node.y + node.h / 2 >= -margin
+    && node.y - node.h / 2 <= height + margin;
+}
+
+function drawActiveWorkRange(ctx, range, byId, width, height) {
+  if (!range) {
+    state.activeRangeEdge = null;
+    return;
+  }
+  const rangeNodes = range.nodeIds.map((id) => byId.get(id)).filter(Boolean);
+  const prompt = byId.get(range.promptId);
+  if (!prompt || !rangeNodes.length) return;
+  const scale = Math.max(.28, state.graphView.scale);
+  let left;
+  let targetRight;
+  let top;
+  let bottom;
+  if (state.layoutMode === 'flow') {
+    left = prompt.x + prompt.w / 2 + 18 * scale;
+    targetRight = Math.max(left + 72 * scale, ...rangeNodes.map((node) => node.x + node.w / 2 + 30 * scale));
+    top = state.graphView.offsetY + (LANES[0].y - 66) * state.graphView.scaleY;
+    bottom = state.graphView.offsetY + (LANES.at(-1).y + 66) * state.graphView.scaleY;
+  } else {
+    left = Math.min(...rangeNodes.map((node) => node.x - node.w / 2)) - 34 * scale;
+    targetRight = Math.max(...rangeNodes.map((node) => node.x + node.w / 2)) + 34 * scale;
+    top = Math.min(...rangeNodes.map((node) => node.y - node.h / 2)) - 46 * scale;
+    bottom = Math.max(...rangeNodes.map((node) => node.y + node.h / 2)) + 46 * scale;
+  }
+  const edgeKey = `${state.layoutMode}:${range.turnId}`;
+  if (!state.activeRangeEdge || state.activeRangeEdge.key !== edgeKey) {
+    state.activeRangeEdge = { key: edgeKey, x: targetRight };
+  } else {
+    state.activeRangeEdge.x = REDUCED_MOTION ? targetRight : mix(state.activeRangeEdge.x, targetRight, .16);
+  }
+  const right = state.activeRangeEdge.x;
+  if (right < laneGutter() - 80 || left > width + 80 || bottom < -80 || top > height + 80) return;
+  const pulse = .5 + Math.sin(state.livePhase * .052) * .5;
+  const gradient = ctx.createLinearGradient(left, 0, right, 0);
+  gradient.addColorStop(0, 'rgba(255,209,102,.05)');
+  gradient.addColorStop(.5, 'rgba(255,209,102,.012)');
+  gradient.addColorStop(1, 'rgba(255,209,102,.05)');
+  ctx.save();
+  ctx.fillStyle = gradient;
+  ctx.fillRect(left, top, Math.max(0, right - left), bottom - top);
+  ctx.restore();
+  drawGoldenBrace(ctx, left, top, bottom, 1, scale, pulse);
+  drawGoldenBrace(ctx, right, top, bottom, -1, scale, pulse);
+  ctx.save();
+  ctx.globalAlpha = .58 + pulse * .28;
+  ctx.fillStyle = '#ffd166';
+  ctx.font = `700 ${clamp(7.5 * scale, 7.5, 10)}px ${GRAPH_FONT}`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('ACTIVE TURN  ✦', right - 15 * scale, Math.max(14, top - 7 * scale));
+  ctx.restore();
+}
+
+function drawGoldenBrace(ctx, x, top, bottom, facing, scale, pulse) {
+  const span = Math.max(80, bottom - top);
+  const middle = top + span / 2;
+  const quarter = span / 4;
+  const depth = 18 * scale;
+  const trace = () => {
+    ctx.beginPath();
+    ctx.moveTo(x + facing * depth, top);
+    ctx.bezierCurveTo(x + facing * depth * .18, top, x, top + quarter * .28, x, top + quarter);
+    ctx.bezierCurveTo(x, middle - quarter * .34, x + facing * depth * .2, middle - depth * .4, x + facing * depth, middle);
+    ctx.bezierCurveTo(x + facing * depth * .2, middle + depth * .4, x, middle + quarter * .34, x, bottom - quarter);
+    ctx.bezierCurveTo(x, bottom - quarter * .28, x + facing * depth * .18, bottom, x + facing * depth, bottom);
+  };
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(255,209,102,.28)';
+  ctx.lineWidth = (2.2 + pulse * 1.2) * graphStrokeScale(scale);
+  ctx.shadowColor = '#ffd166';
+  ctx.shadowBlur = 14 + pulse * 16;
+  trace();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = `rgba(255,225,145,${.58 + pulse * .34})`;
+  ctx.lineWidth = 1.1 * graphStrokeScale(scale);
+  ctx.setLineDash([9 * scale, 8 * scale]);
+  ctx.lineDashOffset = -state.livePhase * 1.35 * scale;
+  trace();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function animateCardEntrance(node, progress) {
+  if (progress >= 1 || REDUCED_MOTION) return node;
+  const eased = 1 - Math.pow(1 - progress, 3);
+  const bloom = Math.sin(progress * Math.PI) * .045;
+  const scale = .74 + eased * .26 + bloom;
+  return {
+    ...node,
+    y: node.y + (1 - eased) * 18,
+    w: node.w * scale,
+    h: node.h * scale,
+    visualScale: node.visualScale * scale,
+  };
+}
+
+function drawMaterializationHalo(ctx, node, progress) {
+  const energy = Math.sin(progress * Math.PI) * (1 - progress * .35);
+  if (energy <= .01) return;
+  const color = node.kind === 'files' ? '#79d9ff' : nodeColor(node.data);
+  const expansion = 5 + (1 - progress) * 18;
+  ctx.save();
+  ctx.globalAlpha = energy * .42;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2 * graphStrokeScale(node.visualScale);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18 * energy;
+  roundedRect(ctx, node.x - node.w / 2 - expansion, node.y - node.h / 2 - expansion, node.w + expansion * 2, node.h + expansion * 2, 7);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawExitingCards(ctx, now) {
+  if (REDUCED_MOTION || !state.exitingNodes.length) return;
+  state.exitingNodes = state.exitingNodes.filter((item) => now - item.removedAt < CARD_EXIT_MS);
+  for (const item of state.exitingNodes) {
+    const progress = clamp((now - item.removedAt) / CARD_EXIT_MS, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const projected = projectNode(item.node);
+    const scale = 1 - eased * .34;
+    const ghost = {
+      ...projected,
+      y: projected.y - eased * 16,
+      w: projected.w * scale,
+      h: projected.h * scale,
+      visualScale: projected.visualScale * scale,
+    };
+    const rect = elements.canvas.getBoundingClientRect();
+    if (!isScreenNodeVisible(ghost, rect.width, rect.height, 80)) continue;
+    const opacity = Math.pow(1 - progress, 2);
+    drawDissolveMotes(ctx, ghost, progress);
+    if (ghost.kind === 'files') drawFileNode(ctx, ghost, opacity);
+    else drawWorkNode(ctx, ghost, opacity);
+  }
+}
+
+function drawDissolveMotes(ctx, node, progress) {
+  const color = node.kind === 'files' ? '#79d9ff' : nodeColor(node.data);
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  for (let index = 0; index < 9; index += 1) {
+    const seed = constellationRandom(`${node.id}:${index}`, 83);
+    const x = node.x - node.w / 2 + seed * node.w;
+    const y = node.y + node.h / 2 - progress * (22 + seed * 34);
+    ctx.globalAlpha = Math.sin(progress * Math.PI) * (.25 + seed * .55);
+    ctx.beginPath();
+    ctx.arc(x, y, 1 + seed * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function smoothstep(value) {
+  const progress = clamp(value, 0, 1);
+  return progress * progress * (3 - 2 * progress);
+}
+
 function detectRasterMime(payload) {
   try {
     const bytes = Uint8Array.from(atob(payload.slice(0, 96)), (character) => character.charCodeAt(0));
@@ -1876,6 +2287,22 @@ function formatLaneDuration(ms) {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m`;
+}
+function itemDurationLabel(data) {
+  if (!data || data.type === 'prompt' || data.type === 'session' || data.type === 'milestone') return '';
+  const running = isInProgressNode(data);
+  let duration = Number.isFinite(data.durationMs) ? Math.max(0, data.durationMs) : null;
+  if (running && data.startedAt) duration = Math.max(0, Date.now() - Date.parse(data.startedAt));
+  if (duration == null || duration <= 0) return '';
+  const suffix = running ? '+' : '';
+  if (duration < 1000) return `<1s${suffix}`;
+  if (duration < 60_000) return `${Math.max(1, Math.floor(duration / 1000))}s${suffix}`;
+  if (duration < 3_600_000) return `${Math.max(1, Math.floor(duration / 60_000))}m${suffix}`;
+  return `${Math.max(1, Math.floor(duration / 3_600_000))}h${suffix}`;
+}
+function cardTimingText(data) {
+  const duration = itemDurationLabel(data);
+  return `${timeOnly(data.startedAt)}${duration ? ` · ${duration}` : ''}`;
 }
 function formatDuration(ms) { if (ms == null) return '—'; if (ms < 1000) return `${ms}ms`; if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`; return `${Math.floor(ms / 60_000)}m ${Math.floor(ms % 60_000 / 1000)}s`; }
 function elapsed(start, end) { if (!start || !end) return '00:00'; const seconds = Math.max(0, Math.floor((Date.parse(end) - Date.parse(start)) / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; }

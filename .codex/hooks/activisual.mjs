@@ -61,7 +61,10 @@ function compact(input) {
     result.agentId = safeId(input.agent_id || 'agent');
     result.agentType = String(input.agent_type || 'subagent');
   } else if (event === 'PreCompact' || event === 'PostCompact') result.trigger = String(input.trigger || input.source || 'auto');
-  else if (event === 'Stop') result.stopHookActive = Boolean(input.stop_hook_active);
+  else if (event === 'Stop') {
+    result.stopHookActive = Boolean(input.stop_hook_active);
+    result.assistantResponse = redactText(input.last_assistant_message || input.assistant_response || '', 16_000);
+  }
   else result.data = redact(input);
   return result;
 }
