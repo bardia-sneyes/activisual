@@ -30,9 +30,13 @@ export class EventStore extends EventEmitter {
   }
 
   watch() {
-    this.watcher = fs.watch(this.paths.dataDir, (_event, filename) => {
-      if (filename === 'events.jsonl') void this.readNew();
-    });
+    // Node 24's Windows fs-event backend can abort the process when a watched
+    // temporary directory changes. Polling remains reliable on Windows.
+    if (process.platform !== 'win32') {
+      this.watcher = fs.watch(this.paths.dataDir, (_event, filename) => {
+        if (filename === 'events.jsonl') void this.readNew();
+      });
+    }
     this.poller = setInterval(() => void this.readNew(), 750);
     this.poller.unref();
   }

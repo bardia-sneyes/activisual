@@ -1,6 +1,6 @@
 {
   "name": "activisual",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first live observability dashboard for agentic coding sessions",
   "type": "module",
   "main": "./integrations/opencode/index.js",
