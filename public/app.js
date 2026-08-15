@@ -7,6 +7,8 @@ const LANES = [
 ];
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const GRAPH_FONT = '"Cascadia Code", "SFMono-Regular", "Roboto Mono", Consolas, monospace';
+const PROMPT_CARD_MIN_HEIGHT = 104;
+const PROMPT_CARD_MAX_HEIGHT = 142;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -388,7 +390,7 @@ function buildGraphModel(chunks, session) {
     const node = {
       id: data.id, kind: 'chunk', x: 150 + index * spacing, y: laneDefinition.y - (hasFileList ? 37 : 0),
       w: isPrompt ? 252 : data.type === 'result' || data.sourceCount > 1 ? 190 : 168,
-      h: isPrompt ? (data.attachments.length ? 134 : 112) : data.type === 'result' ? 72 : 68,
+      h: isPrompt ? promptCardHeight(data) : data.type === 'result' ? 72 : 68,
       lane, data,
     };
     nodes.push(node);
@@ -406,7 +408,7 @@ function buildGraphModel(chunks, session) {
         visibleFiles, overflowCount: Math.max(0, attachedFiles.length - visibleFiles.length),
         parentTitle: data.title, status: 'file', sourceCount: attachedFiles.length,
       };
-      nodes.push({ id: attachment.id, kind: 'files', x: node.x, y: laneDefinition.y + 31, w: 148, h: visibleFiles.length * 12 + Math.max(0, visibleFiles.length - 1) * 3, lane, data: attachment });
+      nodes.push({ id: attachment.id, kind: 'files', x: node.x, y: laneDefinition.y + 34, w: 148, h: visibleFiles.length * 18 + Math.max(0, visibleFiles.length - 1) * 4, lane, data: attachment });
       links.push({ from: data.id, to: attachment.id, kind: 'attachment' });
     }
   });
@@ -999,12 +1001,13 @@ function drawConstellationField(ctx, width, height) {
 
 function drawLink(ctx, from, to, kind, opacity, active = false, route = null) {
   const linkScale = Math.max(.01, (from.visualScale + to.visualScale) / 2);
+  const strokeScale = graphStrokeScale(linkScale);
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.strokeStyle = kind === 'attachment' ? 'rgba(121,217,255,.48)' : kind === 'handoff' ? 'rgba(255,209,102,.54)' : active ? 'rgba(113,247,168,.88)' : 'rgba(113,247,168,.42)';
-  ctx.lineWidth = (kind === 'attachment' ? 1 : active ? 2 : 1.35) * linkScale;
-  if (kind === 'attachment') ctx.setLineDash([3 * linkScale, 5 * linkScale]);
-  if (active) { ctx.setLineDash([8 * linkScale, 8 * linkScale]); ctx.lineDashOffset = -state.livePhase * linkScale; }
+  ctx.lineWidth = (kind === 'attachment' ? 1 : active ? 2 : 1.35) * strokeScale;
+  if (kind === 'attachment') ctx.setLineDash([3 * strokeScale, 5 * strokeScale]);
+  if (active) { ctx.setLineDash([8 * strokeScale, 8 * strokeScale]); ctx.lineDashOffset = -state.livePhase * strokeScale; }
   const ports = route?.ports || linkPorts(from, to, [], kind);
   const start = portPoint(from, ports.from, route?.fromOffset || 0);
   const end = portPoint(to, ports.to, route?.toOffset || 0);
@@ -1029,7 +1032,7 @@ function drawLink(ctx, from, to, kind, opacity, active = false, route = null) {
   }
   ctx.stroke();
   if (kind === 'sequence' || kind === 'handoff') {
-    drawArrowHead(ctx, end.x, end.y, kind === 'handoff' ? '#ffd166' : 'rgba(113,247,168,.72)', ports.to, linkScale);
+    drawArrowHead(ctx, end.x, end.y, kind === 'handoff' ? '#ffd166' : 'rgba(113,247,168,.72)', ports.to, strokeScale);
   }
   ctx.restore();
 }
@@ -1185,7 +1188,6 @@ function drawArrowHead(ctx, x, y, color, port = 'left', scale = 1) {
 function drawWorkNode(ctx, node, opacity, liveHead = false) {
   const { x, y, data } = node;
   const visualScale = Math.max(.01, node.visualScale || 1);
-  const screenWidth = node.w;
   const w = node.w / visualScale;
   const h = node.h / visualScale;
   const color = nodeColor(data);
@@ -1196,7 +1198,7 @@ function drawWorkNode(ctx, node, opacity, liveHead = false) {
   ctx.scale(visualScale, visualScale);
   ctx.fillStyle = data.type === 'result' ? 'rgba(12,28,21,.98)' : 'rgba(8,17,14,.96)';
   ctx.strokeStyle = color;
-  ctx.lineWidth = selected ? 2 : 1;
+  ctx.lineWidth = (selected ? 2 : 1) * graphStrokeScale(visualScale) / visualScale;
   if (liveHead) {
     const pulse = .32 + (Math.sin(state.livePhase * .045) + 1) * .14;
     ctx.shadowColor = color;
@@ -1204,13 +1206,16 @@ function drawWorkNode(ctx, node, opacity, liveHead = false) {
   }
   roundedRect(ctx, -w / 2, -h / 2, w, h, 4); ctx.fill(); ctx.stroke();
   ctx.shadowBlur = 0;
-  ctx.fillStyle = color; ctx.fillRect(-w / 2, -h / 2, 3, h);
-  if (screenWidth < (data.type === 'prompt' ? 112 : 80)) {
-    const compactLabel = data.type === 'decision' ? 'DIR' : data.type === 'result' ? 'END' : data.type.slice(0, 3).toUpperCase();
-    ctx.fillStyle = color;
-    ctx.font = `700 7px ${GRAPH_FONT}`;
-    ctx.textAlign = 'center';
-    ctx.fillText(compactLabel, 1, 2);
+  ctx.fillStyle = color; ctx.fillRect(-w / 2, -h / 2, 3 * graphStrokeScale(visualScale) / visualScale, h);
+  const detailFontSize = (data.type === 'prompt' ? 10 : 11) * visualScale;
+  if (node.h < 36 || node.w < 72) {
+    drawCompactNodeTitle(ctx, node, data.type.toUpperCase(), color);
+    ctx.restore();
+    return;
+  }
+  if (detailFontSize < 8) {
+    if (data.type === 'prompt') drawCondensedPromptNode(ctx, node, data, color);
+    else drawCondensedWorkNode(ctx, node, data, color);
     ctx.restore();
     return;
   }
@@ -1248,31 +1253,74 @@ function drawPromptNodeContent(ctx, data, w, h, color) {
 
   ctx.fillStyle = '#f4f1df';
   ctx.font = `600 10px ${GRAPH_FONT}`;
-  const lines = wrapCanvasText(ctx, data.title || 'User prompt', w - 26, 3);
+  const titleTop = top + 39;
+  const titleBottom = data.attachments?.length ? h / 2 - 48 : h / 2 - 23;
+  const maxLines = clamp(Math.floor((titleBottom - titleTop) / 14) + 1, 1, 3);
+  const lines = wrapCanvasText(ctx, data.title || 'User prompt', w - 26, maxLines);
   lines.forEach((line, index) => ctx.fillText(line, left, top + 39 + index * 14));
 
   if (data.attachments?.length) {
     const attachment = data.attachments[0];
-    const dividerY = top + 84;
+    const dividerY = h / 2 - 42;
     ctx.strokeStyle = 'rgba(255,209,102,.18)';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(left, dividerY); ctx.lineTo(right, dividerY); ctx.stroke();
-    drawAttachmentIcon(ctx, left, top + 94, attachment.kind, color);
+    drawAttachmentIcon(ctx, left, h / 2 - 28, attachment.kind, color);
     ctx.fillStyle = '#c9d7d1';
     ctx.font = `8px ${GRAPH_FONT}`;
     const countLabel = data.attachments.length > 1 ? `+${data.attachments.length - 1}` : '';
     const countWidth = countLabel ? ctx.measureText(countLabel).width + 10 : 0;
-    ctx.fillText(fitCanvasText(ctx, attachment.name, w - 47 - countWidth), left + 18, top + 98);
+    ctx.fillText(fitCanvasText(ctx, attachment.name, w - 47 - countWidth), left + 18, h / 2 - 24);
     if (countLabel) {
       ctx.fillStyle = color;
       ctx.font = `700 8px ${GRAPH_FONT}`;
-      ctx.fillText(countLabel, right - ctx.measureText(countLabel).width, top + 98);
+      ctx.fillText(countLabel, right - ctx.measureText(countLabel).width, h / 2 - 24);
     }
   }
 
   ctx.fillStyle = '#789087';
   ctx.font = `8px ${GRAPH_FONT}`;
   ctx.fillText(timeOnly(data.startedAt), left, h / 2 - 9);
+}
+
+function drawCondensedPromptNode(ctx, node, data, color) {
+  const visualScale = Math.max(.01, node.visualScale || 1);
+  const w = node.w / visualScale;
+  const h = node.h / visualScale;
+  const padding = 10 / visualScale;
+  const headerSize = 7 / visualScale;
+  const bodySize = 9 / visualScale;
+  const lineHeight = 12 / visualScale;
+  const left = -w / 2 + padding;
+  const top = -h / 2 + padding;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = color;
+  ctx.font = `700 ${headerSize}px ${GRAPH_FONT}`;
+  ctx.fillText('PROMPT', left, top);
+  const bodyTop = top + headerSize + 6 / visualScale;
+  const availableHeight = h / 2 - padding - bodyTop;
+  const maxLines = clamp(Math.floor(availableHeight / lineHeight), 1, 2);
+  ctx.fillStyle = '#f4f1df';
+  ctx.font = `600 ${bodySize}px ${GRAPH_FONT}`;
+  const lines = wrapCanvasText(ctx, data.title || 'User prompt', w - padding * 2, maxLines);
+  lines.forEach((line, index) => ctx.fillText(line, left, bodyTop + index * lineHeight));
+}
+
+function drawCondensedWorkNode(ctx, node, data, color) {
+  const visualScale = Math.max(.01, node.visualScale || 1);
+  const w = node.w / visualScale;
+  const h = node.h / visualScale;
+  const padding = 9 / visualScale;
+  const left = -w / 2 + padding;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.font = `700 ${7 / visualScale}px ${GRAPH_FONT}`;
+  ctx.fillText(data.type.toUpperCase().slice(0, 12), left, -6 / visualScale);
+  ctx.fillStyle = '#eef6f1';
+  ctx.font = `600 ${9 / visualScale}px ${GRAPH_FONT}`;
+  ctx.fillText(fitCanvasText(ctx, displayNodeTitle(data), w - padding * 2), left, 8 / visualScale);
 }
 
 function drawAttachmentIcon(ctx, x, y, kind, color) {
@@ -1339,33 +1387,35 @@ function drawFileNode(ctx, node, opacity) {
   ctx.globalAlpha = opacity;
   ctx.translate(x, y);
   ctx.scale(visualScale, visualScale);
-  if (screenWidth < 64) {
+  if (screenWidth < 64 || visualScale < .65) {
     ctx.fillStyle = 'rgba(7,16,18,.96)';
     ctx.strokeStyle = selected ? '#79d9ff' : 'rgba(121,217,255,.58)';
-    ctx.lineWidth = selected ? 1.8 : 1;
+    ctx.lineWidth = (selected ? 1.8 : 1) * graphStrokeScale(visualScale) / visualScale;
     roundedRect(ctx, -w / 2, -h / 2, w, h, 3); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#aac0ba';
-    ctx.font = `700 7px ${GRAPH_FONT}`;
+    ctx.font = `700 ${compactNodeFontSize(node) / visualScale}px ${GRAPH_FONT}`;
     ctx.textAlign = 'center';
-    ctx.fillText(String(data.files.length), 4, 3);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(data.files.length), 1 / visualScale, 0);
     ctx.restore();
     return;
   }
-  const maxChars = Math.max(10, Math.floor((w - 28) / 5.8));
-  const gap = Math.min(3, h / 16);
+  const maxChars = Math.max(8, Math.floor((w - 34) / 6.2));
+  const gap = Math.min(4, h / 18);
   const rowHeight = (h - gap * Math.max(0, data.visibleFiles.length - 1)) / data.visibleFiles.length;
   data.visibleFiles.forEach((file, index) => {
     const rowY = -h / 2 + rowHeight / 2 + index * (rowHeight + gap);
     const actionColor = file.action === 'write' ? '#b39cff' : '#79d9ff';
     ctx.fillStyle = 'rgba(7,16,18,.96)';
     ctx.strokeStyle = selected ? actionColor : `${actionColor}88`;
-    ctx.lineWidth = selected ? 1.5 : 1;
+    ctx.lineWidth = (selected ? 1.5 : 1) * graphStrokeScale(visualScale) / visualScale;
     roundedRect(ctx, -w / 2, rowY - rowHeight / 2, w, rowHeight, 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = actionColor;
-    ctx.beginPath(); ctx.arc(-w / 2 + 10, rowY, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-w / 2 + 11, rowY, 2.4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#c4d4ce';
-    ctx.font = `8px ${GRAPH_FONT}`;
-    ctx.fillText(ellipsize(file.path.split('/').at(-1), maxChars), -w / 2 + 19, rowY + 3);
+    ctx.font = `${Math.max(9.5, 8 / visualScale)}px ${GRAPH_FONT}`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ellipsize(file.path.split('/').at(-1), maxChars), -w / 2 + 21, rowY);
   });
   if (data.overflowCount) {
     ctx.fillStyle = '#60756d';
@@ -1383,6 +1433,31 @@ function nodeColor(data) {
   if (data.type === 'write' || data.type === 'agent') return '#b39cff';
   if (data.type === 'test' || data.type === 'build') return '#71f7a8';
   return '#79d9ff';
+}
+
+function drawCompactNodeTitle(ctx, node, label, color) {
+  const visualScale = Math.max(.01, node.visualScale || 1);
+  const w = node.w / visualScale;
+  const fontSize = compactNodeFontSize(node);
+  ctx.fillStyle = color;
+  ctx.font = `700 ${fontSize / visualScale}px ${GRAPH_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(fitCanvasText(ctx, label, w * .8), 1 / visualScale, 0);
+}
+
+function compactNodeFontSize(node) {
+  return clamp(Math.min(node.w * .16, node.h * .46), 6, 10);
+}
+
+function promptCardHeight(data) {
+  const estimatedLines = clamp(Math.ceil(String(data.title || '').length / 36), 1, 3);
+  const attachmentHeight = data.attachments?.length ? 28 : 0;
+  return clamp(66 + estimatedLines * 14 + attachmentHeight, PROMPT_CARD_MIN_HEIGHT, PROMPT_CARD_MAX_HEIGHT);
+}
+
+function graphStrokeScale(scale) {
+  return clamp(scale, .65, 1.8);
 }
 
 function relatedNodeIds(model) {
