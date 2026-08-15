@@ -191,7 +191,7 @@ export function extractFiles(value, projectRoot = process.cwd()) {
       candidate = candidate.trim().replace(/^["'(=]+|["'),;]+$/g, '').replace(/[:#]\d+$/, '');
       if (!candidate || candidate.includes('://') || candidate.includes('node_modules/')) continue;
       const absolute = path.isAbsolute(candidate) ? path.normalize(candidate) : path.resolve(projectRoot, candidate);
-      const relative = path.relative(projectRoot, absolute);
+      const relative = path.relative(projectRoot, absolute).split(path.sep).join('/');
       if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
       seen.set(relative || path.basename(absolute), { path: relative || path.basename(absolute), action: 'read' });
     }

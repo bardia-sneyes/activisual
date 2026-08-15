@@ -1,0 +1,33 @@
+{
+  "name": "activisual",
+  "version": "0.1.0",
+  "description": "A local-first live dashboard for agent sessions",
+  "author": {
+    "name": "Bardia Sneyes",
+    "url": "https://github.com/bardia-sneyes"
+  },
+  "homepage": "https://github.com/bardia-sneyes/activisual",
+  "repository": "https://github.com/bardia-sneyes/activisual",
+  "license": "MIT",
+  "keywords": [
+    "observability",
+    "dashboard",
+    "hooks",
+    "agentic-coding"
+  ],
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Activisual",
+    "shortDescription": "See agent work unfold locally",
+    "longDescription": "A private, localhost-only timeline and graph for coding-agent sessions.",
+    "developerName": "Bardia Sneyes",
+    "capabilities": [
+      "Read"
+    ],
+    "websiteURL": "https://github.com/bardia-sneyes/activisual",
+    "brandColor": "#71F7A8",
+    "screenshots": [
+      "./docs/dashboard.png"
+    ]
+  }
+}

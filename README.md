@@ -1,61 +1,139 @@
 # Activisual
 
-Activisual is a local-first live dashboard for Codex sessions. It turns lifecycle events into a compact timeline of meaningful work and a graph connecting commands, decisions, agents, and files.
+**See what your coding agent is doing—live, locally, and without sending its trace anywhere.**
 
-![Local-only](https://img.shields.io/badge/data-local--only-71f7a8)
-![Node](https://img.shields.io/badge/node-%3E%3D20-79d9ff)
+[![CI](https://github.com/bardia-sneyes/activisual/actions/workflows/ci.yml/badge.svg)](https://github.com/bardia-sneyes/activisual/actions/workflows/ci.yml)
+![Node](https://img.shields.io/badge/Node.js-%3E%3D20-71f7a8)
+![Privacy](https://img.shields.io/badge/data-local--only-79d9ff)
+![License](https://img.shields.io/badge/license-MIT-f7cb71)
 
-## Try it
+Activisual turns agent lifecycle events into a readable timeline and a relationship graph of prompts, tools, decisions, subagents, tests, builds, git operations, and files. It supports **Codex, Claude Code, Pi, OpenCode, and Hermes Agent** from one small npm package.
 
-Activisual has no runtime dependencies. From this repository:
+![Activisual dashboard showing a live trace and work graph](docs/dashboard.png)
+
+## Quick start
+
+Node.js 20 or newer is required. From the project you want to observe:
+
+```bash
+npx --yes activisual@latest install --harness all
+npx --yes activisual@latest start
+```
+
+The installer preserves existing configuration and is safe to run again. Project scope is the default; use `--global` to configure user-wide integrations. Hermes plugins are always user-scoped because that is where Hermes loads third-party plugins.
+
+The dashboard opens at `http://127.0.0.1:4319`. Restart the relevant harness after installation. Codex and Claude Code also require you to review newly added hooks with `/hooks` before trusting them.
+
+## Install one harness
+
+Each command is project-local unless marked otherwise.
+
+| Harness | One-command install | What Activisual configures |
+| --- | --- | --- |
+| Codex | `npx --yes activisual@latest install --harness codex` | `.codex/hooks.json` plus a dependency-free hook runtime |
+| Claude Code | `npx --yes activisual@latest install --harness claude` | `.claude/settings.json` plus a dependency-free hook runtime |
+| Pi | `npx --yes activisual@latest install --harness pi` | Adds `npm:activisual` to `.pi/settings.json` |
+| OpenCode | `npx --yes activisual@latest install --harness opencode` | Adds `activisual` to `opencode.json`; OpenCode installs the npm plugin |
+| Hermes Agent | `npx --yes activisual@latest install --harness hermes` | Installs and enables `~/.hermes/plugins/activisual` |
+
+Aliases `claude-code` and `open-code` are accepted. To install several harnesses at once, pass a comma-separated list such as `--harness codex,pi`; to install all of them, use `--harness all`.
+
+```bash
+# User-wide Codex, Claude Code, Pi, and OpenCode configuration
+npx --yes activisual@latest install --harness all --global
+
+# Observe a project other than the current directory
+npx --yes activisual@latest start --project /path/to/project --port 4320
+```
+
+### Native package-manager routes
+
+The repository also ships the native manifests expected by each ecosystem: `.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`, `pi.extensions`, the OpenCode npm export, and Hermes `plugin.yaml`.
+
+```bash
+# Pi
+pi install npm:activisual
+
+# Hermes Agent
+hermes plugins install bardia-sneyes/activisual --enable
+
+# Claude Code marketplace
+claude plugin marketplace add bardia-sneyes/activisual
+claude plugin install activisual@activisual
+```
+
+For Codex, add this repository as a plugin marketplace and install Activisual from the Plugins directory. The `npx` installer remains the shortest path and works before marketplace listing.
+
+## What you get
+
+- A live trace that pairs tool start/end events into meaningful work chunks with duration and outcome.
+- A work graph connecting prompts, approvals, tools, agents, and files inside the tracked project.
+- Clear build, test, git, write, failure, decision, and agent-branch states.
+- Saved local sessions, replay controls, a detail inspector, and explicit session deletion.
+- Cross-harness event normalization, so one dashboard model works across different hook APIs.
+
+Activisual is an observer, not an enforcement boundary. Harnesses expose different lifecycle events, and hosted tools that bypass local hooks may not appear in the trace.
+
+## Privacy by default
+
+- Hooks append compact events to `<project>/.activisual/events.jsonl`; no cloud service or telemetry is involved.
+- The dashboard listens on `127.0.0.1` only.
+- Common secret keys, bearer tokens, API keys, private keys, connection strings, and secret-bearing environment values are redacted before persistence.
+- Large strings and collections are truncated; transcript paths and full conversation transcripts are not stored.
+- Events older than 30 days are pruned at startup, and only the 50 most recent sessions are retained.
+- Hook adapters fail open: Activisual cannot block the coding agent if its dashboard is stopped.
+
+These controls reduce accidental exposure but do not replace a dedicated secret scanner. Avoid placing secrets directly in prompts or command arguments.
+
+## How it works
+
+```text
+Harness lifecycle event
+  -> native hook/plugin adapter
+  -> redact + normalize + append JSONL
+  -> localhost server and session reducer
+  -> JSON API + server-sent events
+  -> live timeline, graph, inspector, and replay
+```
+
+Codex and Claude Code use command-hook manifests. Pi and OpenCode load the JavaScript adapters exported by the npm package. Hermes loads the Python plugin from its user plugin directory. All adapters produce the same compact event envelope.
+
+See [the architecture notes](docs/architecture.md) for the storage model, grouping rules, API, and current limits.
+
+## Command reference
+
+```text
+activisual install [--harness NAME|all] [--project PATH] [--global]
+activisual start [--project PATH] [--port 4319] [--no-open]
+```
+
+`install` defaults to Codex. `start` defaults to the current directory and opens a browser unless `--no-open` is supplied.
+
+## Development
 
 ```bash
 npm install
-npm run check
-npm test
+npm run verify
+npm pack --dry-run
 npm link
 ```
 
-Install the lifecycle hooks in the project you want to observe:
+`npm run verify` performs syntax checks, integration/config matching tests, server tests, and package-manifest validation. CI runs the same verification on Node 20, 22, and 24 on both Linux and Windows.
 
-```bash
-cd /path/to/your/project
-activisual install
-```
+## Publishing
 
-Codex requires you to review new or changed project hooks. Start Codex and use `/hooks` to inspect and trust the Activisual hook definitions. Then start the dashboard:
+The package metadata, allowlist, MIT license, CI, and tag-driven release workflow are ready. A tag such as `v0.1.0` must exactly match `package.json`; a successful release publishes to npm with provenance and creates a GitHub release containing the package tarball.
 
-```bash
-activisual start
-```
+For the first npm release:
 
-The dashboard binds to `127.0.0.1:4319` and opens in your browser. Use `--port`, `--project`, or `--no-open` to change those defaults.
+1. Create or sign in to the npm account that will own `activisual`, enable two-factor authentication, and confirm the package name is still available.
+2. Create a granular npm automation token with publish access and save it as the GitHub repository secret `NPM_TOKEN`.
+3. Push the code, then create and push a version tag: `git tag v0.1.0 && git push origin v0.1.0`.
+4. After the package exists on npm, configure its trusted publisher for GitHub user `bardia-sneyes`, repository `activisual`, workflow `release.yml`, and allowed action `npm publish`.
+5. Remove `NPM_TOKEN`; later releases authenticate through GitHub OIDC automatically. Bump `package.json`, push the matching `vX.Y.Z` tag, and the workflow does the rest.
 
-## What the MVP captures
+The unscoped npm name `activisual` was unclaimed when checked on August 15, 2026, but registry availability can change until the first publish succeeds.
 
-- Session start/end, user prompts, stops, and context compaction
-- Tool start/finish pairs, durations, outcomes, and permission requests
-- Builds, tests, git milestones, file reads/writes, and subagent branches
-- Redacted input/output metadata, including the patch associated with file-edit nodes when available
-- Saved sessions with live updates, replay, inspection, and explicit deletion
+## License
 
-Activisual groups `PreToolUse` and `PostToolUse` events using Codex's `tool_use_id`. Tests, builds, git operations, file edits, decisions, and agent branches receive distinct work-chunk types; everything else remains a compact generic tool chunk.
-
-## Privacy defaults
-
-- The hook writes only to `<project>/.activisual/events.jsonl` with user-only file permissions where supported.
-- The server listens on localhost. There is no telemetry, remote storage, or external request in the runtime.
-- Common secret keys, bearer tokens, OpenAI-style API keys, private keys, connection strings, and secret-bearing environment assignments are redacted before persistence.
-- Large strings and collections are truncated. Transcript paths and full Codex transcripts are not stored.
-- Events older than 30 days are pruned when the server starts, and only the 50 most recent sessions are retained.
-- The dashboard's delete button permanently removes one session from the local event log.
-
-These rules reduce accidental exposure; they are not a general-purpose secret scanner. Avoid placing secrets directly in prompts or command arguments.
-
-## Design decisions
-
-The MVP tracks one explicit project per server. Project-local hooks are reliable and keep capture scope understandable; automatic discovery can be added after the single-project path has been exercised in real sessions. Hook scripts fail open and do not make HTTP calls, so a stopped dashboard never blocks Codex.
-
-Current Codex hooks cover local function tools, shell commands, `apply_patch`, and MCP tools. Hosted tools such as web search are not currently observable through `PreToolUse`/`PostToolUse`, so the graph is intentionally a useful trace rather than a complete enforcement or audit boundary. See the current [Codex Hooks documentation](https://learn.chatgpt.com/docs/hooks).
-
-More implementation detail lives in [docs/architecture.md](docs/architecture.md).
+MIT

@@ -1,0 +1,14 @@
+{
+  "name": "activisual",
+  "owner": {
+    "name": "Bardia Sneyes"
+  },
+  "plugins": [
+    {
+      "name": "activisual",
+      "source": ".",
+      "description": "Local-first live dashboard for agent sessions",
+      "version": "0.1.0"
+    }
+  ]
+}

@@ -3,8 +3,8 @@
 ## Event path
 
 ```text
-Codex lifecycle hook
-  -> project-local, dependency-free Node hook
+Harness lifecycle event
+  -> native adapter (command hook, JavaScript extension, or Python plugin)
   -> redact + compact
   -> .activisual/events.jsonl
   -> localhost server tail
@@ -13,7 +13,9 @@ Codex lifecycle hook
   -> timeline / canvas graph / replay inspector
 ```
 
-The hook is intentionally fire-and-forget. It appends one JSON line and produces no stdout, additional context, decisions, or exit failures. Activisual therefore observes Codex without steering it.
+Every adapter is intentionally fire-and-forget. It appends one JSON line and produces no additional context, decisions, or exit failures. Activisual therefore observes the host agent without steering it.
+
+Codex and Claude Code copy a dependency-free Node runtime beside their hook configuration. Pi and OpenCode load JavaScript exports from the npm package. Hermes loads the Python plugin installed under `~/.hermes/plugins/activisual`. The adapters map native event names and payload fields into the same stored envelope.
 
 ## Stored event envelope
 

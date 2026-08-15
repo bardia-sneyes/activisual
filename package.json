@@ -1,20 +1,76 @@
 {
   "name": "activisual",
   "version": "0.1.0",
-  "description": "A local-first live visual companion for Codex sessions",
+  "description": "Local-first live observability dashboard for agentic coding sessions",
   "type": "module",
+  "main": "./integrations/opencode/index.js",
+  "exports": {
+    ".": "./integrations/opencode/index.js",
+    "./pi": "./integrations/pi/index.js",
+    "./hook-runtime": "./src/hook-runtime.mjs"
+  },
   "bin": {
     "activisual": "./src/cli.js"
+  },
+  "files": [
+    "src/",
+    "public/",
+    "docs/",
+    "integrations/",
+    "hooks/",
+    ".claude-plugin/",
+    ".codex-plugin/",
+    ".agents/plugins/marketplace.json",
+    "plugin.yaml",
+    "__init__.py",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./integrations/pi/index.js"
+    ]
   },
   "scripts": {
     "start": "node src/cli.js start --no-open",
     "dev": "node --watch src/cli.js start --no-open",
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/server.js && node --check public/app.js"
+    "check": "node --check src/cli.js && node --check src/server.js && node --check src/install.js && node --check src/event-writer.js && node --check integrations/pi/index.js && node --check integrations/opencode/index.js && node --check public/app.js",
+    "validate:package": "node scripts/validate-package.js",
+    "validate:release": "node scripts/check-release-version.js",
+    "verify": "npm run check && npm test && npm run validate:package",
+    "prepack": "npm run verify"
   },
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "author": "Bardia Sneyes <sneyes69@gmail.com>",
   "license": "MIT",
-  "private": true
+  "homepage": "https://github.com/bardia-sneyes/activisual#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bardia-sneyes/activisual.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bardia-sneyes/activisual/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "agentic-coding",
+    "claude-code",
+    "codex",
+    "hermes-agent",
+    "hooks",
+    "observability",
+    "opencode",
+    "pi-coding-agent"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
 }

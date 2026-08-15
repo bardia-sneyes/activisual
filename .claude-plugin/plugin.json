@@ -1,0 +1,17 @@
+{
+  "name": "activisual",
+  "version": "0.1.0",
+  "description": "A local-first live dashboard for agent sessions",
+  "author": {
+    "name": "Bardia Sneyes"
+  },
+  "homepage": "https://github.com/bardia-sneyes/activisual",
+  "repository": "https://github.com/bardia-sneyes/activisual",
+  "license": "MIT",
+  "keywords": [
+    "observability",
+    "dashboard",
+    "hooks",
+    "agentic-coding"
+  ]
+}
