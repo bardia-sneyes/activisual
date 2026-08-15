@@ -66,10 +66,13 @@ Relevant host documentation: [Codex hooks](https://learn.chatgpt.com/docs/hooks)
 
 ## What you get
 
-- A live timeline that pairs tool start and finish events into meaningful work with duration and outcome.
-- A graph connecting prompts, approvals, tools, agents, and files inside the tracked project.
-- Clear build, test, git, write, failure, decision, and subagent states.
-- Saved local sessions, replay controls, a detail inspector, and explicit session deletion.
+- Session start/end, user prompts, stops, context compaction, and paired tool lifecycle events.
+- Builds, tests, git milestones, file reads/writes, permission requests, and subagent branches.
+- Full redacted patch payloads (up to 2 MB per captured string), per-file diff statistics, and color-coded diff inspection.
+- Human-readable structured tool inputs and responses rather than raw JSON logs.
+- Permission mode, request, inferred allowance, decision, risk, and reason fields when a harness exposes them.
+- Omni-directional constellation and chronological lane layouts with pan, zoom, fit, live follow, and keyboard inspection.
+- Saved sessions with live updates, JSON export, a detail inspector, and explicit deletion.
 - One normalized event model across all supported harnesses.
 
 Activisual observes agent activity; it is not a security or enforcement boundary. Event coverage depends on what each harness exposes, and hosted operations that bypass local hooks may not appear.
@@ -78,8 +81,8 @@ Activisual observes agent activity; it is not a security or enforcement boundary
 
 - Runtime trace data stays on the local machine; Activisual has no telemetry service.
 - The dashboard listens on `127.0.0.1` only.
-- Secret-bearing keys, bearer tokens, private keys, connection strings, and environment values are redacted before persistence.
-- Large strings and collections are truncated. Raw transcripts and transcript paths are not stored.
+- Secret-bearing keys, bearer tokens, OpenAI-style API keys, private keys, connection strings, and environment values are redacted before persistence.
+- Very large strings are capped at 2 MB and collections are bounded. Raw transcripts and transcript paths are not stored.
 - Events older than 30 days are pruned at startup, and only the 50 most recent sessions are retained.
 - Hook adapters fail open, so Activisual cannot block the host agent when capture is unavailable.
 
@@ -93,7 +96,7 @@ Harness lifecycle event
   -> redact + normalize + append JSONL
   -> localhost server and session reducer
   -> JSON API + server-sent events
-  -> live timeline, graph, inspector, and replay
+  -> live workflow graph + structured inspector
 ```
 
 Codex and Claude Code use command hooks. Pi and OpenCode load JavaScript adapters from the npm package. Hermes loads the packaged Python plugin. Every adapter writes the same compact event envelope.

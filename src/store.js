@@ -11,18 +11,26 @@ export class EventStore extends EventEmitter {
     this.paths = pathsFor(projectRoot);
     this.retentionDays = options.retentionDays ?? DEFAULT_RETENTION_DAYS;
     this.sessionLimit = options.sessionLimit ?? DEFAULT_SESSION_LIMIT;
+    this.historyEvents = [];
+    this.liveEvents = [];
     this.events = [];
     this.offset = 0;
     this.remainder = '';
     this.watcher = null;
     this.poller = null;
     this.readPromise = null;
+    this.mutationPromise = Promise.resolve();
+    this.rotating = false;
   }
 
   async init() {
     await fsp.mkdir(this.paths.dataDir, { recursive: true, mode: 0o700 });
+    const history = await fsp.open(this.paths.historyPath, 'a', 0o600);
+    await history.close();
     const handle = await fsp.open(this.paths.inboxPath, 'a', 0o600);
     await handle.close();
+    this.historyEvents = await readEventFile(this.paths.historyPath);
+    this.refreshEvents();
     await this.readNew();
     await this.prune();
     this.watch();
@@ -52,10 +60,12 @@ export class EventStore extends EventEmitter {
         watcher.close();
       });
     }
+    await this.mutationPromise;
     if (this.readPromise) await this.readPromise;
   }
 
   async readNew() {
+    if (this.rotating) return;
     if (this.readPromise) return this.readPromise;
     this.readPromise = (async () => {
       const handle = await fsp.open(this.paths.inboxPath, 'r');
@@ -64,7 +74,8 @@ export class EventStore extends EventEmitter {
         if (stat.size < this.offset) {
           this.offset = 0;
           this.remainder = '';
-          this.events = [];
+          this.liveEvents = [];
+          this.refreshEvents();
         }
         if (stat.size === this.offset) return;
 
@@ -88,13 +99,14 @@ export class EventStore extends EventEmitter {
           try {
             const event = JSON.parse(line);
             if (event?.sessionId && event?.receivedAt) {
-              this.events.push(event);
+              this.liveEvents.push(event);
               added.push(event);
             }
           } catch {
             // A partial/corrupt line is ignored; subsequent valid events remain usable.
           }
         }
+        if (added.length) this.refreshEvents();
         if (added.length) this.emit('events', added);
       } finally {
         await handle.close();
@@ -131,10 +143,9 @@ export class EventStore extends EventEmitter {
   }
 
   async deleteSession(id) {
-    const before = this.events.length;
-    this.events = this.events.filter((event) => event.sessionId !== id);
-    if (before === this.events.length) return false;
-    await this.rewrite();
+    await this.readNew();
+    if (!this.events.some((event) => event.sessionId === id)) return false;
+    await this.compact((event) => event.sessionId !== id);
     this.emit('deleted', id);
     return true;
   }
@@ -144,17 +155,86 @@ export class EventStore extends EventEmitter {
     const allowedSessions = new Set(this.getSessions().slice(0, this.sessionLimit).map((session) => session.id));
     const retained = this.events.filter((event) => Date.parse(event.receivedAt) >= cutoff && allowedSessions.has(event.sessionId));
     if (retained.length !== this.events.length) {
-      this.events = retained;
-      await this.rewrite();
+      await this.compact((event) => Date.parse(event.receivedAt) >= cutoff && allowedSessions.has(event.sessionId));
     }
   }
 
-  async rewrite() {
-    const tempPath = `${this.paths.inboxPath}.tmp`;
-    const body = this.events.map((event) => JSON.stringify(event)).join('\n');
-    await fsp.writeFile(tempPath, body ? `${body}\n` : '', { encoding: 'utf8', mode: 0o600 });
-    await fsp.rename(tempPath, this.paths.inboxPath);
-    this.offset = Buffer.byteLength(body ? `${body}\n` : '');
-    this.remainder = '';
+  async compact(keep) {
+    const operation = this.mutationPromise.then(async () => {
+      await this.readNew();
+      this.rotating = true;
+      const rotatedPath = `${this.paths.inboxPath}.rotate-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const tempHistoryPath = `${this.paths.historyPath}.tmp`;
+      try {
+        await renameWithRetry(this.paths.inboxPath, rotatedPath);
+        const liveHandle = await fsp.open(this.paths.inboxPath, 'a', 0o600);
+        await liveHandle.close();
+
+        // Re-read the rotated segment after the rename so events appended between
+        // the last poll and rotation are included in the compaction.
+        const rotatedEvents = await readEventFile(rotatedPath);
+        const retained = [...this.historyEvents, ...rotatedEvents].filter(keep);
+        await writeEventFile(tempHistoryPath, retained);
+        await fsp.rename(tempHistoryPath, this.paths.historyPath);
+
+        this.historyEvents = retained;
+        this.liveEvents = [];
+        this.offset = 0;
+        this.remainder = '';
+        this.refreshEvents();
+        await fsp.rm(rotatedPath, { force: true });
+      } finally {
+        this.rotating = false;
+        await fsp.rm(tempHistoryPath, { force: true }).catch(() => {});
+      }
+      await this.readNew();
+    });
+    this.mutationPromise = operation.catch(() => {});
+    return operation;
   }
+
+  refreshEvents() {
+    this.events = [...this.historyEvents, ...this.liveEvents];
+  }
+}
+
+async function readEventFile(filePath) {
+  let body = '';
+  try {
+    body = await fsp.readFile(filePath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+  const events = [];
+  for (const line of body.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line);
+      if (event?.sessionId && event?.receivedAt) events.push(event);
+    } catch {
+      // Preserve subsequent valid events when one line is corrupt.
+    }
+  }
+  return events;
+}
+
+async function writeEventFile(filePath, events) {
+  const body = events.map((event) => JSON.stringify(event)).join('\n');
+  await fsp.writeFile(filePath, body ? `${body}\n` : '', { encoding: 'utf8', mode: 0o600 });
+}
+
+async function renameWithRetry(source, target) {
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await fsp.rename(source, target);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!['EBUSY', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 12 * (attempt + 1)));
+    }
+  }
+  throw lastError;
 }

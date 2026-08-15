@@ -59,16 +59,22 @@ export function compactHookEvent(input, receivedAt = new Date().toISOString()) {
         ...base,
         toolName: String(input.tool_name || 'tool'),
         toolUseId: safeId(input.tool_use_id || base.id),
-        toolInput: redactValue(input.tool_input, { maxText: 20_000 }),
+        // Patches and command payloads are the primary forensic artifact in the UI.
+        // Keep them complete for realistic edits while retaining a hard ceiling for
+        // pathological payloads. The HTTP adapter separately caps the full request.
+        toolInput: redactValue(input.tool_input, { maxText: 2_000_000, maxArray: 100 }),
+        permission: compactPermission(input),
         ...(base.event === 'PostToolUse'
-          ? { toolResponse: redactValue(input.tool_response, { maxText: 8_000, maxArray: 30 }) }
+          ? { toolResponse: redactValue(input.tool_response, { maxText: 2_000_000, maxArray: 100 }) }
           : {}),
       };
     case 'PermissionRequest':
       return {
         ...base,
         toolName: String(input.tool_name || 'tool'),
-        toolInput: redactValue(input.tool_input, { maxText: 4_000 }),
+        toolUseId: input.tool_use_id ? safeId(input.tool_use_id) : null,
+        toolInput: redactValue(input.tool_input, { maxText: 2_000_000, maxArray: 100 }),
+        permission: compactPermission(input),
       };
     case 'UserPromptSubmit':
       return { ...base, prompt: redactText(String(input.prompt || ''), 4_000) };
@@ -91,6 +97,24 @@ export function compactHookEvent(input, receivedAt = new Date().toISOString()) {
     default:
       return { ...base, data: redactValue(input, { maxText: 2_000 }) };
   }
+}
+
+function compactPermission(input) {
+  const source = input.permission || input.permission_request || {};
+  const pick = (...keys) => keys.map((key) => input[key] ?? source?.[key]).find((value) => value != null);
+  const mode = pick('permission_mode', 'mode');
+  const decision = pick('permission_decision', 'decision', 'outcome', 'result');
+  const reason = pick('permission_reason', 'reason', 'message');
+  const risk = pick('risk_level', 'risk');
+  const allowed = pick('allowed', 'is_allowed', 'approved');
+  if (mode == null && decision == null && reason == null && risk == null && allowed == null) return null;
+  return redactValue({
+    mode: mode == null ? null : String(mode),
+    decision: decision == null ? null : String(decision),
+    reason: reason == null ? null : String(reason),
+    risk: risk == null ? null : String(risk),
+    allowed: typeof allowed === 'boolean' ? allowed : null,
+  }, { maxText: 4_000 });
 }
 
 export function safeId(value) {

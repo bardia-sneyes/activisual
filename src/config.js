@@ -10,6 +10,7 @@ export function pathsFor(projectRoot) {
   return {
     dataDir,
     inboxPath: path.join(dataDir, 'events.jsonl'),
+    historyPath: path.join(dataDir, 'events.history.jsonl'),
     settingsPath: path.join(dataDir, 'settings.json'),
   };
 }
