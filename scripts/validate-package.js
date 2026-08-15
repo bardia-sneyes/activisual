@@ -8,7 +8,7 @@ const json = async (file) => JSON.parse(await fs.readFile(path.join(root, file),
 
 const packageJson = await json('package.json');
 assert.equal(packageJson.private, undefined, 'package must be publishable');
-assert.equal(packageJson.bin.activisual, './src/cli.js');
+assert.equal(packageJson.bin.activisual, 'src/cli.js');
 assert.deepEqual(packageJson.pi.extensions, ['./integrations/pi/index.js']);
 assert.equal(packageJson.exports['.'], './integrations/opencode/index.js');
 

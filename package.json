@@ -10,7 +10,7 @@
     "./hook-runtime": "./src/hook-runtime.mjs"
   },
   "bin": {
-    "activisual": "./src/cli.js"
+    "activisual": "src/cli.js"
   },
   "files": [
     "src/",
