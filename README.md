@@ -2,86 +2,86 @@
 
 **See what your coding agent is doing—live, locally, and without sending its trace anywhere.**
 
+[![npm](https://img.shields.io/npm/v/activisual?color=71f7a8)](https://www.npmjs.com/package/activisual)
 [![CI](https://github.com/bardia-sneyes/activisual/actions/workflows/ci.yml/badge.svg)](https://github.com/bardia-sneyes/activisual/actions/workflows/ci.yml)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-71f7a8)
-![Privacy](https://img.shields.io/badge/data-local--only-79d9ff)
-![License](https://img.shields.io/badge/license-MIT-f7cb71)
+![Privacy](https://img.shields.io/badge/runtime-local--only-79d9ff)
+[![License](https://img.shields.io/badge/license-MIT-f7cb71)](LICENSE)
 
-Activisual turns agent lifecycle events into a readable timeline and a relationship graph of prompts, tools, decisions, subagents, tests, builds, git operations, and files. It supports **Codex, Claude Code, Pi, OpenCode, and Hermes Agent** from one small npm package.
+Activisual turns coding-agent lifecycle events into a readable timeline and relationship graph. It shows prompts, tools, decisions, subagents, tests, builds, git operations, and affected files across **Codex, Claude Code, Pi, OpenCode, and Hermes Agent**.
 
-![Activisual dashboard showing a live trace and work graph](docs/dashboard.png)
+![Activisual dashboard showing a live trace and work graph](https://raw.githubusercontent.com/bardia-sneyes/activisual/main/docs/dashboard.png)
 
 ## Quick start
 
-Node.js 20 or newer is required. From the project you want to observe:
+Activisual requires Node.js 20 or newer. Run these commands from the project you want to observe:
 
 ```bash
 npx --yes activisual@latest install --harness all
 npx --yes activisual@latest start
 ```
 
-The installer preserves existing configuration and is safe to run again. Project scope is the default; use `--global` to configure user-wide integrations. Hermes plugins are always user-scoped because that is where Hermes loads third-party plugins.
+The installer preserves existing configuration and is safe to run more than once. Restart each installed harness before starting a new session. Codex and Claude Code users should also open `/hooks` and review the newly installed lifecycle hooks before trusting them.
 
-The dashboard opens at `http://127.0.0.1:4319`. Restart the relevant harness after installation. Codex and Claude Code also require you to review newly added hooks with `/hooks` before trusting them.
+The dashboard opens at `http://127.0.0.1:4319`. Trace data stays in `<project>/.activisual/events.jsonl`.
 
-## Install one harness
+## Install by harness
 
-Each command is project-local unless marked otherwise.
+Installation is project-scoped by default:
 
-| Harness | One-command install | What Activisual configures |
+| Harness | Command | Configuration |
 | --- | --- | --- |
-| Codex | `npx --yes activisual@latest install --harness codex` | `.codex/hooks.json` plus a dependency-free hook runtime |
-| Claude Code | `npx --yes activisual@latest install --harness claude` | `.claude/settings.json` plus a dependency-free hook runtime |
+| Codex | `npx --yes activisual@latest install --harness codex` | Adds `.codex/hooks.json` and a dependency-free hook runtime |
+| Claude Code | `npx --yes activisual@latest install --harness claude` | Adds hooks to `.claude/settings.json` and copies the hook runtime |
 | Pi | `npx --yes activisual@latest install --harness pi` | Adds `npm:activisual` to `.pi/settings.json` |
-| OpenCode | `npx --yes activisual@latest install --harness opencode` | Adds `activisual` to `opencode.json`; OpenCode installs the npm plugin |
+| OpenCode | `npx --yes activisual@latest install --harness opencode` | Adds `activisual` to the `plugin` list in `opencode.json` |
 | Hermes Agent | `npx --yes activisual@latest install --harness hermes` | Installs and enables `~/.hermes/plugins/activisual` |
 
-Aliases `claude-code` and `open-code` are accepted. To install several harnesses at once, pass a comma-separated list such as `--harness codex,pi`; to install all of them, use `--harness all`.
+Aliases `claude-code` and `open-code` are accepted. Use a comma-separated list such as `--harness codex,pi`, or use `--harness all` for every supported harness.
+
+Add `--global` to configure user-wide Codex, Claude Code, Pi, and OpenCode integrations. Hermes plugins are always user-scoped because Hermes loads third-party plugins from the user plugin directory.
 
 ```bash
-# User-wide Codex, Claude Code, Pi, and OpenCode configuration
 npx --yes activisual@latest install --harness all --global
-
-# Observe a project other than the current directory
 npx --yes activisual@latest start --project /path/to/project --port 4320
 ```
 
-### Native package-manager routes
+### Native installation alternatives
 
-The repository also ships the native manifests expected by each ecosystem: `.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`, `pi.extensions`, the OpenCode npm export, and Hermes `plugin.yaml`.
+Activisual also includes the manifests and exports used by each harness. The `npx` installer above is the consistent cross-harness route; these native commands are useful when you prefer a harness package manager.
 
 ```bash
-# Pi
+# Pi: user scope (use -l for project scope)
 pi install npm:activisual
 
 # Hermes Agent
 hermes plugins install bardia-sneyes/activisual --enable
 
-# Claude Code marketplace
+# Claude Code
 claude plugin marketplace add bardia-sneyes/activisual
 claude plugin install activisual@activisual
 ```
 
-For Codex, add this repository as a plugin marketplace and install Activisual from the Plugins directory. The `npx` installer remains the shortest path and works before marketplace listing.
+Relevant host documentation: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Claude Code plugins](https://code.claude.com/docs/en/discover-plugins), [Pi packages](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md), [OpenCode plugins](https://opencode.ai/docs/plugins/), and [Hermes plugins](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/plugins.md).
 
 ## What you get
 
-- A live trace that pairs tool start/end events into meaningful work chunks with duration and outcome.
-- A work graph connecting prompts, approvals, tools, agents, and files inside the tracked project.
-- Clear build, test, git, write, failure, decision, and agent-branch states.
+- A live timeline that pairs tool start and finish events into meaningful work with duration and outcome.
+- A graph connecting prompts, approvals, tools, agents, and files inside the tracked project.
+- Clear build, test, git, write, failure, decision, and subagent states.
 - Saved local sessions, replay controls, a detail inspector, and explicit session deletion.
-- Cross-harness event normalization, so one dashboard model works across different hook APIs.
+- One normalized event model across all supported harnesses.
 
-Activisual is an observer, not an enforcement boundary. Harnesses expose different lifecycle events, and hosted tools that bypass local hooks may not appear in the trace.
+Activisual observes agent activity; it is not a security or enforcement boundary. Event coverage depends on what each harness exposes, and hosted operations that bypass local hooks may not appear.
 
-## Privacy by default
+## Privacy
 
-- Hooks append compact events to `<project>/.activisual/events.jsonl`; no cloud service or telemetry is involved.
+- Runtime trace data stays on the local machine; Activisual has no telemetry service.
 - The dashboard listens on `127.0.0.1` only.
-- Common secret keys, bearer tokens, API keys, private keys, connection strings, and secret-bearing environment values are redacted before persistence.
-- Large strings and collections are truncated; transcript paths and full conversation transcripts are not stored.
+- Secret-bearing keys, bearer tokens, private keys, connection strings, and environment values are redacted before persistence.
+- Large strings and collections are truncated. Raw transcripts and transcript paths are not stored.
 - Events older than 30 days are pruned at startup, and only the 50 most recent sessions are retained.
-- Hook adapters fail open: Activisual cannot block the coding agent if its dashboard is stopped.
+- Hook adapters fail open, so Activisual cannot block the host agent when capture is unavailable.
 
 These controls reduce accidental exposure but do not replace a dedicated secret scanner. Avoid placing secrets directly in prompts or command arguments.
 
@@ -89,16 +89,16 @@ These controls reduce accidental exposure but do not replace a dedicated secret 
 
 ```text
 Harness lifecycle event
-  -> native hook/plugin adapter
+  -> native hook or plugin adapter
   -> redact + normalize + append JSONL
   -> localhost server and session reducer
   -> JSON API + server-sent events
   -> live timeline, graph, inspector, and replay
 ```
 
-Codex and Claude Code use command-hook manifests. Pi and OpenCode load the JavaScript adapters exported by the npm package. Hermes loads the Python plugin from its user plugin directory. All adapters produce the same compact event envelope.
+Codex and Claude Code use command hooks. Pi and OpenCode load JavaScript adapters from the npm package. Hermes loads the packaged Python plugin. Every adapter writes the same compact event envelope.
 
-See [the architecture notes](docs/architecture.md) for the storage model, grouping rules, API, and current limits.
+See [Architecture](docs/architecture.md) for the storage model, grouping rules, API, and current limitations.
 
 ## Command reference
 
@@ -109,25 +109,19 @@ activisual start [--project PATH] [--port 4319] [--no-open]
 
 `install` defaults to Codex. `start` defaults to the current directory and opens a browser unless `--no-open` is supplied.
 
-## Development
+## Troubleshooting
 
-```bash
-npm install
-npm run verify
-npm pack --dry-run
-npm link
-```
+If the dashboard does not show a new session:
 
-`npm run verify` performs syntax checks, integration/config matching tests, server tests, and package-manifest validation. CI runs the same verification on Node 20, 22, and 24 on both Linux and Windows.
+1. Confirm that `activisual start` is running for the same project directory used by the agent.
+2. Restart the harness after installation.
+3. In Codex or Claude Code, open `/hooks` and confirm that the Activisual hooks are trusted and enabled.
+4. Run the harness installer again; it is idempotent and preserves unrelated configuration.
 
-## Publishing
+## Contributing
 
-Releases are tokenless. npm trusts `.github/workflows/release.yml` through GitHub OIDC, and the workflow publishes the public package with provenance before creating a GitHub release containing the exact tarball.
-
-The npm trusted publisher is configured for GitHub user `bardia-sneyes`, repository `activisual`, workflow `release.yml`, and the `npm publish` action. No `NPM_TOKEN` secret is required.
-
-To release a version, update the version in `package.json`, `package-lock.json`, `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `plugin.yaml`; run `npm run verify`; then push a matching `vX.Y.Z` tag. The workflow rejects mismatched tags and package versions.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](https://github.com/bardia-sneyes/activisual/blob/main/CONTRIBUTING.md) for the development workflow and [SECURITY.md](https://github.com/bardia-sneyes/activisual/blob/main/SECURITY.md) for private vulnerability reporting.
 
 ## License
 
-MIT
+[MIT](LICENSE)

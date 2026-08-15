@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#07100e">
-    <meta name="description" content="A local-first live visual companion for Codex sessions.">
-    <title>Activisual // Local Codex Trace</title>
+    <meta name="description" content="A local-first live visual companion for coding-agent sessions.">
+    <title>Activisual // Local Agent Trace</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -34,8 +34,8 @@
       <section class="mission-bar" aria-labelledby="mission-title">
         <div class="mission-copy">
           <div class="eyebrow"><span id="status-icon">●</span> <span id="status-label">AWAITING SIGNAL</span></div>
-          <h1 id="mission-title">No Codex session captured yet</h1>
-          <p id="mission-summary">Start Codex in this project after installing the Activisual hooks.</p>
+          <h1 id="mission-title">No agent session captured yet</h1>
+          <p id="mission-summary">Start a supported coding agent in this project after installing Activisual.</p>
         </div>
         <dl class="metrics" aria-label="Session metrics">
           <div><dt>EVENTS</dt><dd id="metric-events">000</dd></div>
@@ -62,7 +62,7 @@
         </label>
       </section>
 
-      <section class="workspace" aria-label="Codex session visualization">
+      <section class="workspace" aria-label="Coding-agent session visualization">
         <article class="panel timeline-panel">
           <header class="panel-header">
             <div><span class="panel-index">01</span><h2>LIVE TRACE</h2></div>
@@ -110,7 +110,7 @@
       <div class="empty-trace">
         <span class="terminal-caret">_</span>
         <h3>WAITING FOR THE FIRST EVENT</h3>
-        <p>Run <code>activisual install</code>, trust the project hooks with <code>/hooks</code>, then start a Codex task.</p>
+        <p>Run <code>activisual install --harness all</code>, restart the installed harness, then begin an agent session.</p>
       </div>
     </template>
 

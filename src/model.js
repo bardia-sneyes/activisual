@@ -21,14 +21,14 @@ export function buildSession(events, projectRoot = process.cwd()) {
     if (event.event === 'SessionStart') {
       status = 'active';
       startedAt ||= event.receivedAt;
-      chunks.push(chunkFromLifecycle(event, 'Session started', `Codex ${event.source || 'startup'}`, 'session'));
+      chunks.push(chunkFromLifecycle(event, 'Session started', `Agent ${event.source || 'startup'}`, 'session'));
     } else if (event.event === 'SessionEnd') {
       status = 'complete';
       endedAt = event.receivedAt;
       chunks.push(chunkFromLifecycle(event, 'Session ended', event.reason || 'other', 'session'));
     } else if (event.event === 'Stop') {
       status = 'idle';
-      chunks.push(chunkFromLifecycle(event, 'Turn complete', 'Codex returned control', 'milestone'));
+      chunks.push(chunkFromLifecycle(event, 'Turn complete', 'Agent returned control', 'milestone'));
     } else if (event.event === 'UserPromptSubmit') {
       chunks.push({
         id: event.id,

@@ -120,8 +120,8 @@ function render() {
 function renderMission(session, chunks) {
   if (!session) {
     elements.statusLabel.textContent = 'AWAITING SIGNAL';
-    elements.missionTitle.textContent = 'No Codex session captured yet';
-    elements.missionSummary.textContent = 'Start Codex in this project after installing the Activisual hooks.';
+    elements.missionTitle.textContent = 'No agent session captured yet';
+    elements.missionSummary.textContent = 'Start a supported coding agent in this project after installing Activisual.';
     elements.metricEvents.textContent = '000'; elements.metricFiles.textContent = '00'; elements.metricFailures.textContent = '00'; elements.metricElapsed.textContent = '00:00';
     return;
   }
@@ -130,7 +130,7 @@ function renderMission(session, chunks) {
   const status = state.replay.active ? 'REPLAYING LOCAL TRACE' : session.status === 'active' ? 'CODEX SESSION ACTIVE' : session.status === 'complete' ? 'SESSION COMPLETE' : 'CODEX STANDING BY';
   elements.statusLabel.textContent = status;
   elements.missionTitle.textContent = latest?.title || `${session.project} session`;
-  elements.missionSummary.textContent = latest?.summary || `${shortId(session.id)} · ${session.model || 'Codex'}`;
+  elements.missionSummary.textContent = latest?.summary || `${shortId(session.id)} · ${session.model || 'Agent'}`;
   elements.metricEvents.textContent = String(chunks.length).padStart(3, '0');
   elements.metricFiles.textContent = String(filesFor(chunks).length).padStart(2, '0');
   elements.metricFailures.textContent = String(chunks.filter((chunk) => chunk.status === 'error').length).padStart(2, '0');

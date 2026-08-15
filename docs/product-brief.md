@@ -1,6 +1,6 @@
-# Activisual — product brief
+# Project overview
 
-## Product intent
+## Purpose
 
 Activisual is a local-first visual companion for agentic coding. It makes a live session understandable at a glance through a browser dashboard instead of forcing the user to reconstruct progress from raw tool logs.
 
@@ -30,7 +30,7 @@ Everything stays local by default: no telemetry, cloud storage, or external tran
 
 Activisual is an npm CLI and extension package. It also carries the native manifests used by Codex, Claude Code, and Hermes plugin systems. Continuous integration verifies the adapters and package contents across supported Node releases and operating systems; matching version tags trigger npm and GitHub releases with provenance.
 
-## Current limits
+## Current limitations
 
 - One explicitly selected project per dashboard server.
 - Event coverage differs by harness; the trace is not an enforcement or audit boundary.

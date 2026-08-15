@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "Activisual",
     "shortDescription": "See agent work unfold locally",
-    "longDescription": "A private, localhost-only timeline and graph for coding-agent sessions.",
+    "longDescription": "A localhost-only timeline and graph for coding-agent sessions.",
     "developerName": "Bardia Sneyes",
     "capabilities": [
       "Read"

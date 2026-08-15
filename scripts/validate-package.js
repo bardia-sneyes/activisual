@@ -18,6 +18,10 @@ for (const manifestPath of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.
   assert.equal(manifest.version, packageJson.version);
 }
 
+const claudeMarketplace = await json('.claude-plugin/marketplace.json');
+assert.equal(claudeMarketplace.plugins[0].name, 'activisual');
+assert.equal(claudeMarketplace.plugins[0].version, packageJson.version);
+
 const hooks = await json('hooks/hooks.json');
 assert.deepEqual(Object.keys(hooks.hooks), EVENTS);
 for (const event of EVENTS) {

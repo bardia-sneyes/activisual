@@ -1,4 +1,4 @@
-# Activisual MVP architecture
+# Architecture
 
 ## Event path
 
@@ -27,7 +27,7 @@ Every event stores an ID, timestamp, session ID, optional turn ID, event name, p
 - subagent ID/type;
 - compaction trigger.
 
-`transcript_path` is deliberately omitted because the Codex documentation describes transcript format as unstable and the MVP does not need raw conversation history.
+`transcript_path` and raw conversation history are deliberately omitted because the dashboard does not need them.
 
 ## Grouping
 
@@ -44,7 +44,7 @@ File paths are extracted only when they resolve inside the tracked project. Link
 
 ## Persistence and retention
 
-JSONL is sufficient for a single-project MVP, inspectable with ordinary local tools, and recoverable when the last line is interrupted. The server reads append-only increments, ignores malformed lines, and performs atomic rewrites for deletion and pruning.
+JSONL keeps single-project sessions inspectable with ordinary local tools and recoverable when the last line is interrupted. The server reads append-only increments, ignores malformed lines, and performs atomic rewrites for deletion and pruning.
 
 Default retention is 30 days and 50 sessions. Both values are server options internally and can become CLI flags once real usage provides a sensible configuration surface.
 
@@ -59,7 +59,7 @@ Default retention is 30 days and 50 sessions. Both values are server options int
 
 All responses include a restrictive content security policy, frame denial, no-referrer policy, and MIME sniffing protection.
 
-## Known MVP limits
+## Current limitations
 
 - One explicitly selected project per server.
 - Hosted Codex tools that bypass the local function-tool hook path do not appear as tool chunks.

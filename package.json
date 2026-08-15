@@ -36,9 +36,10 @@
     "dev": "node --watch src/cli.js start --no-open",
     "test": "node --test",
     "check": "node --check src/cli.js && node --check src/server.js && node --check src/install.js && node --check src/event-writer.js && node --check integrations/pi/index.js && node --check integrations/opencode/index.js && node --check public/app.js",
+    "check:docs": "node scripts/validate-docs.js",
     "validate:package": "node scripts/validate-package.js",
     "validate:release": "node scripts/check-release-version.js",
-    "verify": "npm run check && npm test && npm run validate:package",
+    "verify": "npm run check && npm run check:docs && npm test && npm run validate:package",
     "prepack": "npm run verify"
   },
   "engines": {
