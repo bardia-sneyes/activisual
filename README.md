@@ -14,20 +14,20 @@ Activisual turns coding-agent lifecycle events into a readable timeline and rela
 
 ## Quick start
 
-Activisual requires Node.js 20 or newer. Run these commands from the project you want to observe:
+Activisual requires Node.js 20 or newer. The recommended setup installs the integrations once at user scope, then starts a dashboard from the project you want to observe:
 
 ```bash
-npx --yes activisual@latest install --harness all
+npx --yes activisual@latest install --harness all --global
 npx --yes activisual@latest start
 ```
 
-The installer preserves existing configuration and is safe to run more than once. Restart each installed harness before starting a new session. Codex and Claude Code users should also open `/hooks` and review the newly installed lifecycle hooks before trusting them.
+The global installation applies to future sessions across the configured harnesses, so you do not need to install Activisual separately in every repository. The installer preserves existing configuration and is safe to run more than once. Restart each installed harness before starting a new session. Codex and Claude Code users should also open `/hooks` and review the newly installed lifecycle hooks before trusting them.
 
-The dashboard opens at `http://127.0.0.1:4319`. Trace data stays in `<project>/.activisual/events.jsonl`.
+Event capture can be user-wide, but each dashboard server displays one explicitly selected project. The dashboard opens at `http://127.0.0.1:4319`, and trace data stays in that project's `<project>/.activisual/events.jsonl`. To view multiple projects simultaneously, start one server per project on different ports.
 
 ## Install by harness
 
-Installation is project-scoped by default:
+User-wide installation with `--global` is recommended for normal use. Without `--global`, installation is scoped to the selected project and must be repeated for every repository you want to track:
 
 | Harness | Command | Configuration |
 | --- | --- | --- |
@@ -39,7 +39,7 @@ Installation is project-scoped by default:
 
 Aliases `claude-code` and `open-code` are accepted. Use a comma-separated list such as `--harness codex,pi`, or use `--harness all` for every supported harness.
 
-Add `--global` to configure user-wide Codex, Claude Code, Pi, and OpenCode integrations. Hermes plugins are always user-scoped because Hermes loads third-party plugins from the user plugin directory.
+Add `--global` to configure user-wide Codex, Claude Code, Pi, and OpenCode integrations. Global integrations capture each session into the active project's own `.activisual/events.jsonl`; they do not combine every project into one dashboard. Hermes plugins are always user-scoped because Hermes loads third-party plugins from the user plugin directory.
 
 ```bash
 npx --yes activisual@latest install --harness all --global
@@ -117,9 +117,10 @@ activisual start [--project PATH] [--port 4319] [--no-open]
 If the dashboard does not show a new session:
 
 1. Confirm that `activisual start` is running for the same project directory used by the agent.
-2. Restart the harness after installation.
-3. In Codex or Claude Code, open `/hooks` and confirm that the Activisual hooks are trusted and enabled.
-4. Run the harness installer again; it is idempotent and preserves unrelated configuration.
+2. Confirm that Activisual is installed either globally for the harness or locally in that exact project. A working dashboard for one project does not imply that another project has local hooks.
+3. Restart the harness after installation; already-running sessions do not acquire newly installed hooks.
+4. In Codex or Claude Code, open `/hooks` and confirm that the Activisual hooks are trusted and enabled.
+5. Run the harness installer again; it is idempotent and preserves unrelated configuration.
 
 ## Contributing
 
