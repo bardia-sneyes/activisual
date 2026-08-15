@@ -58,35 +58,47 @@ export class EventStore extends EventEmitter {
   async readNew() {
     if (this.readPromise) return this.readPromise;
     this.readPromise = (async () => {
-      const stat = await fsp.stat(this.paths.inboxPath);
-      if (stat.size < this.offset) {
-        this.offset = 0;
-        this.remainder = '';
-        this.events = [];
-      }
-      if (stat.size === this.offset) return;
       const handle = await fsp.open(this.paths.inboxPath, 'r');
-      const size = stat.size - this.offset;
-      const buffer = Buffer.alloc(size);
-      await handle.read(buffer, 0, size, this.offset);
-      await handle.close();
-      this.offset = stat.size;
-      const lines = `${this.remainder}${buffer.toString('utf8')}`.split('\n');
-      this.remainder = lines.pop() || '';
-      const added = [];
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const event = JSON.parse(line);
-          if (event?.sessionId && event?.receivedAt) {
-            this.events.push(event);
-            added.push(event);
-          }
-        } catch {
-          // A partial/corrupt line is ignored; subsequent valid events remain usable.
+      try {
+        const stat = await handle.stat();
+        if (stat.size < this.offset) {
+          this.offset = 0;
+          this.remainder = '';
+          this.events = [];
         }
+        if (stat.size === this.offset) return;
+
+        const startOffset = this.offset;
+        const size = stat.size - startOffset;
+        const buffer = Buffer.alloc(size);
+        let bytesRead = 0;
+        while (bytesRead < size) {
+          const result = await handle.read(buffer, bytesRead, size - bytesRead, startOffset + bytesRead);
+          if (result.bytesRead === 0) break;
+          bytesRead += result.bytesRead;
+        }
+        if (bytesRead === 0) return;
+
+        this.offset = startOffset + bytesRead;
+        const lines = `${this.remainder}${buffer.subarray(0, bytesRead).toString('utf8')}`.split('\n');
+        this.remainder = lines.pop() || '';
+        const added = [];
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event?.sessionId && event?.receivedAt) {
+              this.events.push(event);
+              added.push(event);
+            }
+          } catch {
+            // A partial/corrupt line is ignored; subsequent valid events remain usable.
+          }
+        }
+        if (added.length) this.emit('events', added);
+      } finally {
+        await handle.close();
       }
-      if (added.length) this.emit('events', added);
     })();
     try {
       return await this.readPromise;
