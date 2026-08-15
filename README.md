@@ -122,17 +122,11 @@ npm link
 
 ## Publishing
 
-The package metadata, allowlist, MIT license, CI, and tag-driven release workflow are ready. A tag such as `v0.1.0` must exactly match `package.json`; a successful release publishes to npm and creates a GitHub release containing the package tarball. Provenance is disabled while the GitHub source repository is private because npm only supports GitHub provenance for public repositories.
+Releases are tokenless. npm trusts `.github/workflows/release.yml` through GitHub OIDC, and the workflow publishes the public package with provenance before creating a GitHub release containing the exact tarball.
 
-For the first npm release:
+The npm trusted publisher is configured for GitHub user `bardia-sneyes`, repository `activisual`, workflow `release.yml`, and the `npm publish` action. No `NPM_TOKEN` secret is required.
 
-1. Create or sign in to the npm account that will own `activisual`, enable two-factor authentication, and confirm the package name is still available.
-2. Create a granular npm automation token with publish access and save it as the GitHub repository secret `NPM_TOKEN`.
-3. Push the code, then create and push a version tag: `git tag v0.1.0 && git push origin v0.1.0`.
-4. After the package exists on npm, configure its trusted publisher for GitHub user `bardia-sneyes`, repository `activisual`, workflow `release.yml`, and allowed action `npm publish`.
-5. Remove `NPM_TOKEN`; later releases authenticate through GitHub OIDC automatically. Bump `package.json`, push the matching `vX.Y.Z` tag, and the workflow does the rest. If the repository becomes public, enable provenance in `package.json` and the release workflow.
-
-The unscoped npm name `activisual` was unclaimed when checked on August 15, 2026, but registry availability can change until the first publish succeeds.
+To release a version, update the version in `package.json`, `package-lock.json`, `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `plugin.yaml`; run `npm run verify`; then push a matching `vX.Y.Z` tag. The workflow rejects mismatched tags and package versions.
 
 ## License
 
