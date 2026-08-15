@@ -12,6 +12,7 @@ const PROMPT_CARD_MAX_HEIGHT = 142;
 const CARD_ENTER_MS = 560;
 const CARD_EXIT_MS = 440;
 const GRAPH_ANIMATION_FRAME_MS = 1000 / 30;
+const ACTIVE_RANGE_MIN_MS = 5000;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -382,8 +383,16 @@ function buildGraphModel(chunks, session) {
     const result = turnResultNode(turn, session, index === turns.length - 1);
     const turnWork = [prompt, ...grouped];
     work.push(...turnWork);
-    if (result.inProgress) activeRange = { promptId: prompt.id, nodeIds: turnWork.map((item) => item.id), turnId: turn.id };
-    else work.push(result);
+    const retainUntil = Date.parse(prompt.startedAt) + ACTIVE_RANGE_MIN_MS;
+    if (result.inProgress || Date.now() < retainUntil) {
+      activeRange = {
+        promptId: prompt.id,
+        nodeIds: turnWork.map((item) => item.id),
+        turnId: turn.id,
+        expiresAt: result.inProgress ? null : retainUntil,
+      };
+    }
+    if (!result.inProgress) work.push(result);
     groupedCount += 1 + grouped.length;
     sourceCount += 1 + turn.chunks.length;
   });
@@ -851,7 +860,8 @@ function hasPendingCardMotion(now = performance.now()) {
 function hasVisibleInProgressCards() {
   if (state.graphModel?.nodes.some((node) => node.kind === 'chunk' && isInProgressNode(node.data) && isGraphNodeVisible(node, 100))) return true;
   const range = state.graphModel?.activeRange;
-  return Boolean(range && state.graphModel.nodes.some((node) => range.nodeIds.includes(node.id) && isGraphNodeVisible(node, 100)));
+  return Boolean(range && (!range.expiresAt || Date.now() < range.expiresAt)
+    && state.graphModel.nodes.some((node) => range.nodeIds.includes(node.id) && isGraphNodeVisible(node, 100)));
 }
 
 function isInProgressNode(data) {
@@ -1983,7 +1993,7 @@ function isScreenNodeVisible(node, width, height, margin = 0) {
 }
 
 function drawActiveWorkRange(ctx, range, byId, width, height) {
-  if (!range) {
+  if (!range || range.expiresAt && Date.now() >= range.expiresAt) {
     state.activeRangeEdge = null;
     return;
   }
@@ -2023,8 +2033,9 @@ function drawActiveWorkRange(ctx, range, byId, width, height) {
   ctx.fillStyle = gradient;
   ctx.fillRect(left, top, Math.max(0, right - left), bottom - top);
   ctx.restore();
-  drawGoldenBrace(ctx, left, top, bottom, 1, scale, pulse);
-  drawGoldenBrace(ctx, right, top, bottom, -1, scale, pulse);
+  drawPromptRangePointer(ctx, prompt, left, scale, pulse);
+  drawGoldenBrace(ctx, left, top, bottom, -1, scale, pulse);
+  drawGoldenBrace(ctx, right, top, bottom, 1, scale, pulse);
   ctx.save();
   ctx.globalAlpha = .58 + pulse * .28;
   ctx.fillStyle = '#ffd166';
@@ -2032,6 +2043,31 @@ function drawActiveWorkRange(ctx, range, byId, width, height) {
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
   ctx.fillText('ACTIVE TURN  ✦', right - 15 * scale, Math.max(14, top - 7 * scale));
+  ctx.restore();
+}
+
+function drawPromptRangePointer(ctx, prompt, braceX, scale, pulse) {
+  const startX = prompt.x + prompt.w / 2;
+  const endX = braceX;
+  const y = prompt.y;
+  if (Math.abs(endX - startX) < 2) return;
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,209,102,${.58 + pulse * .3})`;
+  ctx.lineWidth = (1.2 + pulse * .45) * graphStrokeScale(scale);
+  ctx.shadowColor = '#ffd166';
+  ctx.shadowBlur = 8 + pulse * 9;
+  ctx.beginPath();
+  ctx.moveTo(startX, y);
+  ctx.lineTo(endX, y);
+  ctx.stroke();
+  ctx.fillStyle = '#ffd166';
+  ctx.beginPath();
+  ctx.arc(startX, y, 2.1 * graphStrokeScale(scale), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.translate(endX, y);
+  ctx.rotate(Math.PI / 4);
+  const marker = 3.1 * graphStrokeScale(scale);
+  ctx.fillRect(-marker / 2, -marker / 2, marker, marker);
   ctx.restore();
 }
 
@@ -2058,10 +2094,8 @@ function drawGoldenBrace(ctx, x, top, bottom, facing, scale, pulse) {
   trace();
   ctx.stroke();
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = `rgba(255,225,145,${.58 + pulse * .34})`;
-  ctx.lineWidth = 1.1 * graphStrokeScale(scale);
-  ctx.setLineDash([9 * scale, 8 * scale]);
-  ctx.lineDashOffset = -state.livePhase * 1.35 * scale;
+  ctx.strokeStyle = `rgba(255,225,145,${.72 + pulse * .25})`;
+  ctx.lineWidth = 1.25 * graphStrokeScale(scale);
   trace();
   ctx.stroke();
   ctx.restore();
