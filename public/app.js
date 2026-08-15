@@ -387,10 +387,23 @@ function buildGraphModel(chunks, session) {
     const attachedFiles = dedupeGraphFiles(data.files || []).filter((file) => isCredibleProjectPath(file.path));
     const hasFileList = attachedFiles.length > 0;
     const isPrompt = data.type === 'prompt';
+    const visibleFiles = attachedFiles.slice(0, 4);
+    const diffStats = data.type === 'write' && data.diff ? {
+      additions: Math.max(0, Number(data.diff.additions) || 0),
+      deletions: Math.max(0, Number(data.diff.deletions) || 0),
+    } : null;
+    const overflowCount = Math.max(0, attachedFiles.length - visibleFiles.length);
+    const fileFooterHeight = (overflowCount ? 14 : 0) + (diffStats ? 18 : 0);
+    const fileCardHeight = hasFileList
+      ? visibleFiles.length * 18 + Math.max(0, visibleFiles.length - 1) * 4 + fileFooterHeight
+      : 0;
+    const stackGap = 10;
+    const cardHeight = isPrompt ? promptCardHeight(data) : data.type === 'result' ? 72 : 68;
     const node = {
-      id: data.id, kind: 'chunk', x: 150 + index * spacing, y: laneDefinition.y - (hasFileList ? 37 : 0),
+      id: data.id, kind: 'chunk', x: 150 + index * spacing,
+      y: laneDefinition.y - (hasFileList ? (fileCardHeight + stackGap) / 2 : 0),
       w: isPrompt ? 252 : data.type === 'result' || data.sourceCount > 1 ? 190 : 168,
-      h: isPrompt ? promptCardHeight(data) : data.type === 'result' ? 72 : 68,
+      h: cardHeight,
       lane, data,
     };
     nodes.push(node);
@@ -402,13 +415,16 @@ function buildGraphModel(chunks, session) {
     }
 
     if (hasFileList) {
-      const visibleFiles = attachedFiles.slice(0, 4);
       const attachment = {
         id: `files:${data.id}`, type: 'files', title: `${attachedFiles.length} affected files`, files: attachedFiles,
-        visibleFiles, overflowCount: Math.max(0, attachedFiles.length - visibleFiles.length),
+        visibleFiles, overflowCount, diffStats,
         parentTitle: data.title, status: 'file', sourceCount: attachedFiles.length,
       };
-      nodes.push({ id: attachment.id, kind: 'files', x: node.x, y: laneDefinition.y + 34, w: 148, h: visibleFiles.length * 18 + Math.max(0, visibleFiles.length - 1) * 4, lane, data: attachment });
+      nodes.push({
+        id: attachment.id, kind: 'files', x: node.x,
+        y: laneDefinition.y + (cardHeight + stackGap) / 2, w: 148,
+        h: fileCardHeight, lane, data: attachment,
+      });
       links.push({ from: data.id, to: attachment.id, kind: 'attachment' });
     }
   });
@@ -746,15 +762,14 @@ function zoomGraph(factor, centerX = laneGutter() + (elements.graphWrap.clientWi
   const view = state.graphView;
   const oldScale = view.scale;
   const nextScale = clamp(oldScale * factor, minimumGraphScale(), Math.max(1.8, minimumGraphScale()));
+  const zoomRatio = nextScale / oldScale;
   const worldX = (centerX - view.offsetX) / oldScale;
   const oldScaleY = view.scaleY;
   const worldY = (centerY - view.offsetY) / oldScaleY;
   view.scale = nextScale;
+  view.scaleY = clamp(oldScaleY * zoomRatio, .12, 1.8);
   view.offsetX = centerX - worldX * nextScale;
-  if (state.layoutMode === 'orbit') {
-    view.scaleY = nextScale;
-    view.offsetY = centerY - worldY * nextScale;
-  }
+  view.offsetY = centerY - worldY * view.scaleY;
   constrainGraphView();
   drawGraph();
 }
@@ -768,9 +783,9 @@ function minimumGraphScale() {
   const worldHeight = Math.max(1, contentBounds.maxY - contentBounds.minY);
   const availableWidth = Math.max(1, rect.width - laneGutter());
   const widthMinimum = availableWidth * .5 / worldWidth;
-  if (state.layoutMode !== 'orbit') return Math.max(.12, widthMinimum);
+  if (state.layoutMode !== 'orbit') return Math.max(.28, widthMinimum);
   const heightMinimum = rect.height * .5 / worldHeight;
-  return Math.max(.12, widthMinimum, heightMinimum);
+  return Math.max(.28, widthMinimum, heightMinimum);
 }
 
 function constrainGraphView() {
@@ -783,14 +798,13 @@ function constrainGraphView() {
   if (view.scale < minimumScale) {
     const centerX = laneGutter() + (rect.width - laneGutter()) / 2;
     const worldX = (centerX - view.offsetX) / view.scale;
+    const centerY = rect.height / 2;
+    const worldY = (centerY - view.offsetY) / view.scaleY;
+    const zoomRatio = minimumScale / view.scale;
     view.scale = minimumScale;
+    view.scaleY = clamp(view.scaleY * zoomRatio, .12, 1.8);
     view.offsetX = centerX - worldX * view.scale;
-    if (state.layoutMode === 'orbit') {
-      const centerY = rect.height / 2;
-      const worldY = (centerY - view.offsetY) / view.scaleY;
-      view.scaleY = minimumScale;
-      view.offsetY = centerY - worldY * view.scaleY;
-    }
+    view.offsetY = centerY - worldY * view.scaleY;
   }
   const gutter = laneGutter();
   const middleX = gutter + (rect.width - gutter) / 2;
@@ -870,9 +884,12 @@ function drawGraph() {
 function projectNode(node) {
   const scale = state.graphView.scale;
   const scaleY = state.graphView.scaleY;
-  const visualScale = state.layoutMode === 'orbit' ? scale : Math.min(scale, scaleY);
+  const visualScale = scale;
   const x = state.graphView.offsetX + node.x * scale;
-  const y = state.graphView.offsetY + node.y * scaleY;
+  const laneY = LANES.find((lane) => lane.id === node.lane)?.y || 0;
+  const y = state.layoutMode === 'orbit'
+    ? state.graphView.offsetY + node.y * scale
+    : state.graphView.offsetY + laneY * scaleY + (node.y - laneY) * visualScale;
   return {
     ...node, x, y, visualScale,
     w: node.w * visualScale,
@@ -918,6 +935,8 @@ function drawLaneHeaders(ctx, height) {
       ctx.fillText(`${laneStat.count} PROMPT${laneStat.count === 1 ? '' : 'S'} · ${formatLaneDuration(laneStat.durationMs)}`, labelX, y + 8);
     } else if (lane.id === 'result') {
       ctx.fillText(`${laneStat.count} RESULT${laneStat.count === 1 ? '' : 'S'} · ${formatLaneDuration(laneStat.durationMs)}`, labelX, y + 8);
+      ctx.fillStyle = '#60756d';
+      ctx.fillText(`IDLE · ${formatLaneDuration(stats.get('idle').durationMs)}`, labelX, y + 24);
     } else {
       ctx.fillText(`${formatLaneDuration(laneStat.durationMs)} · ${laneStat.percentage}%`, labelX, y + 8);
     }
@@ -929,12 +948,13 @@ function laneStats() {
   const chunks = state.session?.chunks || [];
   const now = Date.now();
   const stats = new Map(LANES.map((lane) => [lane.id, { durationMs: 0, percentage: 0, count: 0 }]));
+  const turnEnds = turnCompletionTimes(chunks);
   for (const chunk of chunks) {
     if (chunk.type === 'session' || chunk.type === 'milestone' && chunk.title === 'Turn complete') continue;
     const lane = laneFor(chunk);
     const stat = stats.get(lane);
     if (!stat || lane === 'result') continue;
-    stat.durationMs += measuredDuration(chunk, now);
+    stat.durationMs += measuredDuration(chunk, now, turnEnds);
     stat.count += 1;
   }
   const midLanes = new Set(['inspect', 'change', 'verify']);
@@ -947,15 +967,44 @@ function laneStats() {
       stat.percentage = totalDuration > 0 ? Math.round(stat.durationMs / totalDuration * 100) : 0;
     }
   }
+  stats.set('idle', { durationMs: idleDuration(chunks, now, state.session?.endedAt), percentage: 0, count: 0 });
   return stats;
 }
 
-function measuredDuration(chunk, now) {
+function measuredDuration(chunk, now, turnEnds = new Map()) {
   if (Number.isFinite(chunk.durationMs)) return Math.max(0, chunk.durationMs);
   if ((chunk.status === 'running' || chunk.status === 'waiting') && chunk.startedAt) {
-    return Math.max(0, now - Date.parse(chunk.startedAt));
+    const turnEnd = turnEnds.get(chunk.turnId);
+    return Math.max(0, Math.min(now, turnEnd || now) - Date.parse(chunk.startedAt));
   }
   return 0;
+}
+
+function turnCompletionTimes(chunks) {
+  const ends = new Map();
+  for (const chunk of chunks) {
+    if (chunk.type !== 'milestone' || chunk.title !== 'Turn complete' || !chunk.turnId || ends.has(chunk.turnId)) continue;
+    ends.set(chunk.turnId, Date.parse(chunk.endedAt || chunk.startedAt));
+  }
+  return ends;
+}
+
+function idleDuration(chunks, now, sessionEndedAt) {
+  let total = 0;
+  let idleStartedAt = null;
+  for (const chunk of chunks) {
+    if (chunk.type === 'milestone' && chunk.title === 'Turn complete') {
+      idleStartedAt ??= Date.parse(chunk.endedAt || chunk.startedAt);
+    } else if (isUserPromptChunk(chunk) && idleStartedAt != null) {
+      total += Math.max(0, Date.parse(chunk.startedAt) - idleStartedAt);
+      idleStartedAt = null;
+    }
+  }
+  if (idleStartedAt != null) {
+    const idleEnd = sessionEndedAt ? Date.parse(sessionEndedAt) : now;
+    total += Math.max(0, idleEnd - idleStartedAt);
+  }
+  return total;
 }
 
 function drawGrid(ctx, width, height) {
@@ -1401,8 +1450,11 @@ function drawFileNode(ctx, node, opacity) {
     return;
   }
   const maxChars = Math.max(8, Math.floor((w - 34) / 6.2));
-  const gap = Math.min(4, h / 18);
-  const rowHeight = (h - gap * Math.max(0, data.visibleFiles.length - 1)) / data.visibleFiles.length;
+  const overflowHeight = data.overflowCount ? 14 : 0;
+  const diffHeight = data.diffStats ? 18 : 0;
+  const fileRowsHeight = h - overflowHeight - diffHeight;
+  const gap = Math.min(4, fileRowsHeight / 18);
+  const rowHeight = (fileRowsHeight - gap * Math.max(0, data.visibleFiles.length - 1)) / data.visibleFiles.length;
   data.visibleFiles.forEach((file, index) => {
     const rowY = -h / 2 + rowHeight / 2 + index * (rowHeight + gap);
     const actionColor = file.action === 'write' ? '#b39cff' : '#79d9ff';
@@ -1417,10 +1469,27 @@ function drawFileNode(ctx, node, opacity) {
     ctx.textBaseline = 'middle';
     ctx.fillText(ellipsize(file.path.split('/').at(-1), maxChars), -w / 2 + 21, rowY);
   });
+  let footerTop = -h / 2 + fileRowsHeight;
   if (data.overflowCount) {
     ctx.fillStyle = '#60756d';
     ctx.font = `8px ${GRAPH_FONT}`;
-    ctx.fillText(`+${data.overflowCount} more`, -w / 2 + 2, h / 2 + 12);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`+${data.overflowCount} more`, -w / 2 + 21, footerTop + overflowHeight / 2);
+    footerTop += overflowHeight;
+  }
+  if (data.diffStats) {
+    ctx.strokeStyle = 'rgba(161,188,177,.14)';
+    ctx.lineWidth = graphStrokeScale(visualScale) / visualScale;
+    ctx.beginPath(); ctx.moveTo(-w / 2 + 10, footerTop); ctx.lineTo(w / 2 - 10, footerTop); ctx.stroke();
+    const fontSize = Math.max(9.5, 8 / visualScale);
+    const additions = `+${data.diffStats.additions}`;
+    const deletions = `−${data.diffStats.deletions}`;
+    ctx.font = `700 ${fontSize}px ${GRAPH_FONT}`;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#71f7a8';
+    ctx.fillText(additions, -w / 2 + 21, footerTop + diffHeight / 2);
+    ctx.fillStyle = '#ff646d';
+    ctx.fillText(deletions, -w / 2 + 27 + ctx.measureText(additions).width, footerTop + diffHeight / 2);
   }
   ctx.restore();
 }
@@ -1609,8 +1678,11 @@ function appendReadableValue(container, value, label, depth = 0, omitDiff = fals
   if (value == null) {
     const empty = document.createElement('span'); empty.className = 'readable-empty'; empty.textContent = 'not reported'; block.append(empty);
   } else if (typeof value === 'string') {
+    const embeddedFile = parseEmbeddedDataUrl(value, label);
     const isPatch = /(?:^|\n)(?:\*\*\* Begin Patch|diff --git a\/)/m.test(value);
-    if (omitDiff && isPatch) {
+    if (embeddedFile) {
+      appendEmbeddedFile(block, embeddedFile);
+    } else if (omitDiff && isPatch) {
       const linked = document.createElement('span'); linked.className = 'readable-empty'; linked.textContent = 'Rendered in the complete file diff above.'; block.append(linked);
     } else {
       const text = document.createElement(value.includes('\n') || value.length > 140 ? 'pre' : 'p');
@@ -1632,6 +1704,92 @@ function appendReadableValue(container, value, label, depth = 0, omitDiff = fals
     block.append(fields);
   }
   container.append(block);
+}
+
+function parseEmbeddedDataUrl(value, label = 'attachment') {
+  const text = String(value || '');
+  if (!text.startsWith('data:')) return null;
+  const comma = text.indexOf(',');
+  if (comma < 6) return null;
+  const metadata = text.slice(5, comma);
+  if (!/(?:^|;)base64(?:;|$)/i.test(metadata)) return null;
+  const payload = text.slice(comma + 1).replace(/\s/g, '');
+  if (!payload) return null;
+  const validPayload = /^[a-z0-9+/]*={0,2}$/i.test(payload);
+  const capturedPayload = validPayload ? payload : payload.split(/…|\[truncated/i)[0].replace(/[^a-z0-9+/=]/gi, '');
+  const declaredMime = metadata.split(';')[0].toLowerCase() || 'application/octet-stream';
+  const detectedImageMime = detectRasterMime(capturedPayload);
+  const safeImageMime = /^(?:image\/(?:png|jpeg|gif|webp|avif|bmp))$/.test(declaredMime) ? declaredMime : detectedImageMime;
+  const dataUrl = validPayload ? safeImageMime && safeImageMime !== declaredMime ? `data:${safeImageMime};base64,${payload}` : text : null;
+  const padding = (capturedPayload.match(/=*$/)?.[0].length || 0);
+  const size = Math.max(0, Math.floor(capturedPayload.length * 3 / 4) - padding);
+  return {
+    dataUrl,
+    mime: safeImageMime || declaredMime,
+    image: Boolean(safeImageMime),
+    size,
+    name: embeddedFileName(label, safeImageMime || declaredMime),
+    truncated: !validPayload,
+  };
+}
+
+function detectRasterMime(payload) {
+  try {
+    const bytes = Uint8Array.from(atob(payload.slice(0, 96)), (character) => character.charCodeAt(0));
+    const ascii = (start, end) => String.fromCharCode(...bytes.slice(start, end));
+    if (bytes[0] === 0x89 && ascii(1, 4) === 'PNG') return 'image/png';
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+    if (ascii(0, 6) === 'GIF87a' || ascii(0, 6) === 'GIF89a') return 'image/gif';
+    if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'image/webp';
+    if (ascii(0, 2) === 'BM') return 'image/bmp';
+    if (ascii(4, 12) === 'ftypavif' || ascii(4, 12) === 'ftypavis') return 'image/avif';
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function appendEmbeddedFile(container, file) {
+  const card = document.createElement(file.image ? 'figure' : 'div');
+  card.className = `embedded-file${file.image ? ' image' : ''}`;
+  if (file.image && file.dataUrl) {
+    const preview = document.createElement('img');
+    preview.src = file.dataUrl;
+    preview.alt = `${file.name} preview`;
+    preview.loading = 'lazy';
+    preview.decoding = 'async';
+    preview.addEventListener('error', () => { card.classList.add('preview-failed'); });
+    card.append(preview);
+  } else if (file.image) {
+    card.classList.add('preview-failed');
+  } else {
+    const icon = document.createElement('span'); icon.className = 'embedded-file-icon'; icon.textContent = 'FILE'; card.append(icon);
+  }
+  const footer = document.createElement(file.image ? 'figcaption' : 'div'); footer.className = 'embedded-file-footer';
+  const details = document.createElement('span');
+  details.textContent = file.truncated ? `${file.mime} · CAPTURE TRUNCATED` : `${file.mime} · ${formatBytes(file.size)}`;
+  footer.append(details);
+  if (file.dataUrl) {
+    const action = document.createElement('a');
+    action.className = 'embedded-file-action'; action.href = file.dataUrl; action.download = file.name;
+    action.textContent = file.image ? 'OPEN' : 'DOWNLOAD'; footer.append(action);
+  }
+  card.append(footer); container.append(card);
+}
+
+function embeddedFileName(label, mime) {
+  const extension = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+    'image/avif': 'avif', 'image/bmp': 'bmp', 'application/pdf': 'pdf',
+  }[mime] || 'bin';
+  const stem = String(label || 'attachment').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'attachment';
+  return `${stem}.${extension}`;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
 function humanizeKey(value) {

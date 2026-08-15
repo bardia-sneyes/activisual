@@ -27,6 +27,21 @@ test('pairs tool lifecycle events into meaningful work chunks', () => {
   assert.equal(session.status, 'idle');
 });
 
+test('closes an unfinished tool when its turn completes', () => {
+  const common = { sessionId: 'session-stale-tool', cwd: '/work/app', turnId: 'turn-1', toolName: 'Bash' };
+  const session = buildSession([
+    { ...common, id: 'prompt', event: 'UserPromptSubmit', prompt: 'Inspect the project', receivedAt: at(1) },
+    { ...common, id: 'pre', event: 'PreToolUse', toolUseId: 'call-stale', toolInput: { command: 'rg --files' }, receivedAt: at(2) },
+    { ...common, id: 'stop', event: 'Stop', receivedAt: at(7) },
+  ], '/work/app');
+
+  const chunk = session.chunks.find((item) => item.id === 'call-stale');
+  assert.equal(chunk.status, 'complete');
+  assert.equal(chunk.endedAt, at(7));
+  assert.equal(chunk.durationMs, 5000);
+  assert.equal(session.stats.running, 0);
+});
+
 test('classifies failures, builds, git operations, and project files', () => {
   assert.equal(classifyTool('Bash', 'npm run build'), 'build');
   assert.equal(classifyTool('Bash', 'git commit -m test'), 'git');

@@ -30,6 +30,13 @@ export function buildSession(events, projectRoot = process.cwd()) {
       endedAt = event.receivedAt;
       chunks.push(chunkFromLifecycle(event, 'Session ended', event.reason || 'other', 'session'));
     } else if (event.event === 'Stop') {
+      for (const [toolUseId, chunk] of tools) {
+        if (chunk.status !== 'running' || event.turnId && chunk.turnId !== event.turnId) continue;
+        chunk.endedAt = event.receivedAt;
+        chunk.durationMs = Math.max(0, Date.parse(chunk.endedAt) - Date.parse(chunk.startedAt));
+        chunk.status = 'complete';
+        tools.delete(toolUseId);
+      }
       status = 'idle';
       chunks.push(chunkFromLifecycle(event, 'Turn complete', 'Agent returned control', 'milestone'));
     } else if (event.event === 'UserPromptSubmit') {
