@@ -1,0 +1,47 @@
+name: Usage question
+description: Ask for help installing, configuring, or using Activisual
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Activisual version
+      placeholder: 0.1.2
+    validations:
+      required: true
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Harness
+      options:
+        - Codex
+        - Claude Code
+        - Pi
+        - OpenCode
+        - Hermes Agent
+        - Multiple or not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Explain what you are trying to accomplish, what you tried, and where you became stuck.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Node.js version, and other relevant details.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I checked the README and existing issues first.
+          required: true
+        - label: I removed secrets, private prompts, and sensitive trace data.
+          required: true

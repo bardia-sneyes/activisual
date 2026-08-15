@@ -5,7 +5,9 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const documents = [
   'README.md',
+  'CODE_OF_CONDUCT.md',
   'CONTRIBUTING.md',
+  'GOVERNANCE.md',
   'SECURITY.md',
   'RELEASING.md',
   'docs/architecture.md',

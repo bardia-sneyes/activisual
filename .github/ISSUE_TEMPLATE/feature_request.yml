@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a focused improvement to Activisual
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What limitation or user need should this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you would like and any alternatives you considered.
+    validations:
+      required: true
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Relevant harness
+      options:
+        - All harnesses or core dashboard
+        - Codex
+        - Claude Code
+        - Pi
+        - OpenCode
+        - Hermes Agent
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add sanitized examples, screenshots, or links that clarify the request.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and discussions for similar requests.
+          required: true

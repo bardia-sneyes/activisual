@@ -120,7 +120,7 @@ If the dashboard does not show a new session:
 
 ## Contributing
 
-Issues and pull requests are welcome. See [CONTRIBUTING.md](https://github.com/bardia-sneyes/activisual/blob/main/CONTRIBUTING.md) for the development workflow and [SECURITY.md](https://github.com/bardia-sneyes/activisual/blob/main/SECURITY.md) for private vulnerability reporting.
+Issues and pull requests are welcome. See the [contribution guide](https://github.com/bardia-sneyes/activisual/blob/main/CONTRIBUTING.md) for the development workflow, [governance policy](https://github.com/bardia-sneyes/activisual/blob/main/GOVERNANCE.md) for how project decisions are made, and [security policy](https://github.com/bardia-sneyes/activisual/blob/main/SECURITY.md) for private vulnerability reporting. Participation is governed by the [code of conduct](https://github.com/bardia-sneyes/activisual/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 
