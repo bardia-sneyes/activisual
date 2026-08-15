@@ -38,8 +38,17 @@ export class EventStore extends EventEmitter {
   }
 
   async close() {
-    this.watcher?.close();
     clearInterval(this.poller);
+    this.poller = null;
+    if (this.watcher) {
+      const watcher = this.watcher;
+      this.watcher = null;
+      await new Promise((resolve) => {
+        watcher.once('close', resolve);
+        watcher.close();
+      });
+    }
+    if (this.readPromise) await this.readPromise;
   }
 
   async readNew() {

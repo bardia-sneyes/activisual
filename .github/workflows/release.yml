@@ -23,7 +23,8 @@ jobs:
       - run: node scripts/check-release-version.js "${GITHUB_REF_NAME}"
       - run: npm run verify
       - run: npm pack
-      - run: npm publish
+      # npm provenance currently requires a public GitHub source repository.
+      - run: npm publish --provenance=false
         env:
           # Used for the first release; npm prefers OIDC after trusted publishing is configured.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
